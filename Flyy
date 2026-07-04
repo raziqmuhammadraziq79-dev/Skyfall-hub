@@ -1,0 +1,37 @@
+-- LocalScript
+-- Tempatkan di StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local root = character:WaitForChild("HumanoidRootPart")
+
+local flying = false
+local speed = 50
+
+local attachment = Instance.new("Attachment")
+attachment.Parent = root
+
+local velocity = Instance.new("LinearVelocity")
+velocity.Attachment0 = attachment
+velocity.RelativeTo = Enum.ActuatorRelativeTo.World
+velocity.MaxForce = math.huge
+velocity.Enabled = false
+velocity.Parent = root
+
+UserInputService.TouchTap:Connect(function()
+	flying = not flying
+	velocity.Enabled = flying
+end)
+
+RunService.RenderStepped:Connect(function()
+	if not flying then
+		return
+	end
+
+	local cam = workspace.CurrentCamera
+	velocity.VectorVelocity = cam.CFrame.LookVector * speed
+end)
