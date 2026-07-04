@@ -1,0 +1,169 @@
+-- [TEN WEAK // VORD DIRECTIVE]
+-- "Obsidian" Premium Mobile GUI for Roblox
+-- Arsitektur dingin. Presisi mutlak. Kompatibilitas Android maksimal.
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+-- Configuration
+local CONFIG = {
+    PrimaryColor = Color3.fromRGB(25, 25, 30), -- Obsidian Black
+    AccentColor = Color3.fromRGB(0, 150, 255), -- Frost Blue
+    TextColor = Color3.fromRGB(240, 240, 240),
+    Font = Enum.Font.GothamMedium,
+    CornerSize = 8
+}
+
+-- Main ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "OBSIDIAN_LOADER"
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Minimized Button (Always Visible when hidden)
+local MinBtn = Instance.new("TextButton")
+MinBtn.Name = "MinBtn"
+MinBtn.Size = UDim2.new(0, 60, 0, 60)
+MinBtn.Position = UDim2.new(1, -70, 1, -70)
+MinBtn.BackgroundColor3 = CONFIG.AccentColor
+MinBtn.BackgroundTransparency = 0.2
+MinBtn.BorderSizePixel = 0
+MinBtn.Text = "⚡"
+MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextSize = 24
+MinBtn.Visible = false
+MinBtn.Parent = ScreenGui
+
+-- Main Window Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 380, 0, 500)
+MainFrame.Position = UDim2.new(0.5, -190, 0.5, -250)
+MainFrame.BackgroundColor3 = CONFIG.PrimaryColor
+MainFrame.BackgroundTransparency = 0.05
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+-- UI Corner for smooth look
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, CONFIG.CornerSize)
+UICorner.Parent = MainFrame
+
+-- Header Bar
+local Header = Instance.new("Frame")
+Header.Name = "Header"
+Header.Size = UDim2.new(1, 0, 0, 45)
+Header.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+Header.BorderSizePixel = 0
+Header.Parent = MainFrame
+
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, CONFIG.CornerSize)
+HeaderCorner.Parent = Header
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -100, 1, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "OBSIDIAN // SYSTEM"
+Title.TextColor3 = CONFIG.TextColor
+Title.Font = CONFIG.Font
+Title.TextSize = 16
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Header
+
+-- Control Buttons (Minimize/Close)
+local function createControlBtn(parent, text, pos, color, callback)
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(0, 40, 1, 0)
+    Btn.Position = pos
+    Btn.BackgroundColor3 = color
+    Btn.BorderSizePixel = 0
+    Btn.Text = text
+    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Btn.Font = Enum.Font.GothamBold
+    Btn.TextSize = 14
+    Btn.Parent = parent
+    Btn.MouseButton1Click:Connect(callback)
+end
+
+createControlBtn(Header, "_", UDim2.new(1, -85, 0, 0), Color3.fromRGB(200, 200, 50), function()
+    -- Minimize Animation
+    MainFrame:TweenPosition(UDim2.new(0.5, -190, 1.5, 0), "Out", "Quad", 0.5, true)
+    MinBtn.Visible = true
+end)
+
+createControlBtn(Header, "X", UDim2.new(1, -45, 0, 0), Color3.fromRGB(200, 50, 50), function()
+    ScreenGui:Destroy()
+end)
+
+-- Content Area (Scrolling Frame)
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Name = "Content"
+ScrollFrame.Size = UDim2.new(1, -20, 1, -65)
+ScrollFrame.Position = UDim2.new(0, 10, 0, 55)
+ScrollFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+ScrollFrame.BorderSizePixel = 0
+ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 800)
+ScrollFrame.ScrollBarThickness = 4
+ScrollFrame.ScrollBarImageColor3 = CONFIG.AccentColor
+ScrollFrame.Parent = MainFrame
+
+-- Premium Button Creator
+local function createPremiumBtn(parent, name, text, yPos, callback)
+    local Container = Instance.new("Frame")
+    Container.Size = UDim2.new(1, -20, 0, 50)
+    Container.Position = UDim2.new(0, 10, 0, yPos)
+    Container.BackgroundTransparency = 1
+    Container.Parent = parent
+
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(1, 0, 1, 0)
+    Btn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    Btn.BorderSizePixel = 0
+    Btn.Text = text
+    Btn.TextColor3 = CONFIG.TextColor
+    Btn.Font = CONFIG.Font
+    Btn.TextSize = 14
+    Btn.AutoButtonColor = false
+    Btn.Parent = Container
+
+    local BtnCorner = Instance.new("UICorner")
+    BtnCorner.CornerRadius = UDim.new(0, 6)
+    BtnCorner.Parent = Btn
+
+    -- Touch/Mouse Effects
+    local function onHover() Btn.BackgroundColor3 = Color3.fromRGB(55, 55, 60) end
+    local function onLeave() Btn.BackgroundColor3 = Color3.fromRGB(45, 45, 50) end
+    
+    Btn.MouseEnter:Connect(onHover)
+    Btn.MouseLeave:Connect(onLeave)
+    Btn.MouseButton1Click:Connect(callback)
+    
+    -- Restore visibility logic
+    MinBtn.MouseButton1Click:Connect(function()
+        MainFrame:TweenPosition(UDim2.new(0.5, -190, 0.5, -250), "Out", "Quad", 0.5, true)
+        MinBtn.Visible = false
+    end)
+end
+
+-- Example Features
+createPremiumBtn(ScrollFrame, "Fly", "ACTIVATE FLY PRO", 10, function()
+    print("[OBSIDIAN] Fly Protocol Initiated.")
+end)
+
+createPremiumBtn(ScrollFrame, "Noclip", "ENABLE NOCLIP", 70, function()
+    print("[OBSIDIAN] Collision Disabled.")
+end)
+
+createPremiumBtn(ScrollFrame, "Speed", "MAX SPEED RUN", 130, function()
+    print("[OBSIDIAN] Velocity Increased.")
+end)
+
+createPremiumBtn(ScrollFrame, "ESP", "TOGGLE ESP BOX", 190, function()
+    print("[OBSIDIAN] Visuals Rendered.")
+end)
+
+print("[TEN WEAK] Obsidian GUI Loaded. System Ready.")
