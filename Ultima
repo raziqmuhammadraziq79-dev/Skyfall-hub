@@ -1,0 +1,811 @@
+-- THESKYFALL-HUB // ULTIMATE REBORN EDITION v13.0 [INTERNATIONAL PREMIUM]
+-- Author: TEN WEAK for VORD
+-- Status: New Base UI / Dynamic Zoom / Movable / Fixed Overflow / Pro Logs
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Lighting = game:GetService("Lighting")
+
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+local Camera = Workspace.CurrentCamera
+
+-- Configuration
+local CFG = {
+    Title = "THESKYFALL-HUB",
+    Version = "v13.0 REBORN",
+    Accent = Color3.fromRGB(0, 170, 255),
+    BG = Color3.fromRGB(12, 12, 12),
+    BG2 = Color3.fromRGB(20, 20, 20),
+    Text = Color3.fromRGB(240, 240, 240),
+    MinSize = Vector2.new(280, 220),
+    MaxSize = Vector2.new(550, 450),
+    CurrentSize = Vector2.new(380, 300)
+}
+
+-- Utility
+local function New(C, P)
+    local O = Instance.new(C)
+    for i,v in pairs(P) do if i~="Parent" then O[i]=v end end
+    if P.Parent then O.Parent=P.Parent end
+    return O
+end
+
+-- Main Screen
+local Screen = New("ScreenGui", {Name="TheSkyfallReborn", ResetOnSpawn=false, IgnoreGuiInset=true, Parent=CoreGui})
+
+-- FLOATING LOGO BUTTON (Premium Style)
+local FloatBtn = New("ImageButton", {
+    Name="FloatBtn", Size=UDim2.new(0,48,0,48), Position=UDim2.new(0.02,0,0.5,-24),
+    BackgroundColor3=CFG.BG2, BorderSizePixel=0, Visible=false, Parent=Screen
+})
+New("UICorner", {CornerRadius=UDim.new(0,8), Parent=FloatBtn})
+local FloatStroke = New("UIStroke", {Color=CFG.Accent, Thickness=2, Parent=FloatBtn})
+New("ImageLabel", {
+    Size=UDim2.new(0.7,0,0.7,0), Position=UDim2.new(0.15,0,0.15,0),
+    BackgroundTransparency=1, Image="rbxassetid://6031280882", ImageColor3=CFG.Accent, Parent=FloatBtn
+})
+
+-- Main Container (PREMIUM BASE)
+local Main = New("Frame", {
+    Name="Main", Size=UDim2.new(0, CFG.CurrentSize.X, 0, CFG.CurrentSize.Y), 
+    Position=UDim2.new(0.5, -CFG.CurrentSize.X/2, 0.5, -CFG.CurrentSize.Y/2),
+    BackgroundColor3=CFG.BG, BorderSizePixel=0, ClipsDescendants=true, Parent=Screen
+})
+New("UICorner", {CornerRadius=UDim.new(0,12), Parent=Main})
+local Stroke = New("UIStroke", {Color=CFG.Accent, Thickness=2, ApplyStrokeMode=Enum.ApplyStrokeMode.Border, Parent=Main})
+
+-- Header (Draggable)
+local Header = New("Frame", {Name="Header", Size=UDim2.new(1,0,0,38), BackgroundColor3=CFG.BG2, Parent=Main})
+New("UICorner", {CornerRadius=UDim.new(0,12), Parent=Header})
+New("TextLabel", {
+    Size=UDim2.new(1,-80,1,0), Position=UDim2.new(0,12,0,0), BackgroundTransparency=1,
+    Text=CFG.Title.." "..CFG.Version, TextColor3=CFG.Accent, TextSize=12, Font=Enum.Font.GothamBold,
+    TextXAlignment=Enum.TextXAlignment.Left, Parent=Header
+})
+
+local HideBtn = New("TextButton", {
+    Size=UDim2.new(0,28,1,0), Position=UDim2.new(1,-28,0,0), BackgroundTransparency=1,
+    Text="_", TextColor3=CFG.Text, TextSize=18, Font=Enum.Font.GothamBold, Parent=Header
+})
+
+local CloseBtn = New("TextButton", {
+    Size=UDim2.new(0,28,1,0), Position=UDim2.new(1,-56,0,0), BackgroundTransparency=1,
+    Text="X", TextColor3=Color3.fromRGB(255,80,80), TextSize=16, Font=Enum.Font.GothamBold, Parent=Header
+})
+
+-- Sidebar (Premium Compact)
+local Sidebar = New("Frame", {
+    Name="Sidebar", Size=UDim2.new(0,95,1,-38), Position=UDim2.new(0,0,0,38),
+    BackgroundColor3=CFG.BG2, BorderSizePixel=0, Parent=Main
+})
+New("UIListLayout", {Padding=UDim.new(0,5), SortOrder=Enum.SortOrder.LayoutOrder, Parent=Sidebar})
+New("UIPadding", {PaddingTop=UDim.new(0,8), PaddingLeft=UDim.new(0,8), PaddingRight=UDim.new(0,8), PaddingBottom=UDim.new(0,8), Parent=Sidebar})
+
+-- Content Area
+local Content = New("Frame", {
+    Name="Content", Size=UDim2.new(1,-95,1,-38), Position=UDim2.new(0,95,0,38),
+    BackgroundTransparency=1, Parent=Main
+})
+
+-- Pages with Dynamic CanvasSize
+local Pages = {}
+local function CreateTab(Name)
+    local Btn = New("TextButton", {
+        Size=UDim2.new(1,0,0,30), BackgroundColor3=Color3.fromRGB(28,28,28),
+        Text=Name, TextColor3=CFG.Text, TextSize=10, Font=Enum.Font.GothamMedium, Parent=Sidebar
+    })
+    New("UICorner", {CornerRadius=UDim.new(0,6), Parent=Btn})
+    
+    Btn.MouseEnter:Connect(function() TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundColor3=Color3.fromRGB(38,38,38)}):Play() end)
+    Btn.MouseLeave:Connect(function() 
+        if Btn.TextColor3 ~= CFG.Accent then 
+            TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundColor3=Color3.fromRGB(28,28,28)}):Play() 
+        end
+    end)
+    
+    local Page = New("ScrollingFrame", {
+        Name=Name, Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
+        CanvasSize=UDim2.new(0,270,0,1600), ScrollBarThickness=4,
+        ScrollBarImageColor3=CFG.Accent, Visible=false, Parent=Content
+    })
+    New("UIListLayout", {Padding=UDim.new(0,6), SortOrder=Enum.SortOrder.LayoutOrder, Parent=Page})
+    New("UIPadding", {PaddingBottom=UDim.new(0,12), PaddingLeft=UDim.new(0,10), PaddingRight=UDim.new(0,10), Parent=Page})
+    Pages[Name] = Page
+    
+    Btn.MouseButton1Click:Connect(function()
+        for _,p in pairs(Pages) do p.Visible=false end
+        Page.Visible=true
+        for _,c in ipairs(Sidebar:GetChildren()) do
+            if c:IsA("TextButton") then 
+                TweenService:Create(c, TweenInfo.new(0.15), {BackgroundColor3=Color3.fromRGB(28,28,28), TextColor3=CFG.Text}):Play()
+            end
+        end
+        TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundColor3=Color3.fromRGB(40,40,40), TextColor3=CFG.Accent}):Play()
+    end)
+    return Page
+end
+
+-- Components
+local function Toggle(Page, Name, Callback)
+    local Box = New("Frame", {Size=UDim2.new(1,0,0,30), BackgroundColor3=Color3.fromRGB(18,18,18), BorderSizePixel=0, Parent=Page})
+    New("UICorner", {CornerRadius=UDim.new(0,6), Parent=Box})
+    New("TextLabel", {
+        Size=UDim2.new(1,-50,1,0), Position=UDim2.new(0,8,0,0), BackgroundTransparency=1,
+        Text=Name, TextColor3=CFG.Text, TextSize=10, Font=Enum.Font.GothamMedium,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=Box
+    })
+    local Btn = New("TextButton", {
+        Size=UDim2.new(0,42,0,20), Position=UDim2.new(1,-46,0.5,-10),
+        BackgroundColor3=Color3.fromRGB(42,42,42), Text="OFF", TextColor3=Color3.fromRGB(130,130,130),
+        TextSize=9, Font=Enum.Font.GothamBold, Parent=Box
+    })
+    New("UICorner", {CornerRadius=UDim.new(1,0), Parent=Btn})
+    
+    local S=false
+    Btn.MouseButton1Click:Connect(function()
+        S=not S; Btn.Text=S and "ON" or "OFF"
+        TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundColor3=S and CFG.Accent or Color3.fromRGB(42,42,42)}):Play()
+        Callback(S)
+    end)
+end
+
+local function Slider(Page, Name, Min, Max, Def, Callback)
+    local Box = New("Frame", {Size=UDim2.new(1,0,0,40), BackgroundColor3=Color3.fromRGB(18,18,18), BorderSizePixel=0, Parent=Page})
+    New("UICorner", {CornerRadius=UDim.new(0,6), Parent=Box})
+    local Label = New("TextLabel", {
+        Size=UDim2.new(1,-12,0,16), Position=UDim2.new(0,8,0,4), BackgroundTransparency=1,
+        Text=Name..": "..Def, TextColor3=CFG.Text, TextSize=9, Font=Enum.Font.GothamMedium,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=Box
+    })
+    local Track = New("Frame", {Size=UDim2.new(1,-16,0,5), Position=UDim2.new(0,8,1,-14), BackgroundColor3=Color3.fromRGB(32,32,32), Parent=Box})
+    New("UICorner", {CornerRadius=UDim.new(1,0), Parent=Track})
+    local Fill = New("Frame", {Size=UDim2.new((Def-Min)/(Max-Min),0,1,0), BackgroundColor3=CFG.Accent, Parent=Track})
+    New("UICorner", {CornerRadius=UDim.new(1,0), Parent=Fill})
+    
+    local Drag=false
+    Track.InputBegan:Connect(function(I)
+        if I.UserInputType==Enum.UserInputType.Touch then
+            Drag=true
+            local Pct=math.clamp((I.Position.X-Track.AbsolutePosition.X)/Track.AbsoluteSize.X,0,1)
+            local V=math.floor(Min+(Max-Min)*Pct)
+            TweenService:Create(Fill, TweenInfo.new(0.1), {Size=UDim2.new(Pct,0,1,0)}):Play()
+            Label.Text=Name..": "..V; Callback(V)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(I)
+        if Drag and I.UserInputType==Enum.UserInputType.Touch then
+            local Pct=math.clamp((I.Position.X-Track.AbsolutePosition.X)/Track.AbsoluteSize.X,0,1)
+            local V=math.floor(Min+(Max-Min)*Pct)
+            TweenService:Create(Fill, TweenInfo.new(0.1), {Size=UDim2.new(Pct,0,1,0)}):Play()
+            Label.Text=Name..": "..V; Callback(V)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(I) if I.UserInputType==Enum.UserInputType.Touch then Drag=false end end)
+end
+
+local function ActionBtn(Page, Name, Color, Callback)
+    local Btn = New("TextButton", {
+        Size=UDim2.new(1,0,0,28), BackgroundColor3=Color or CFG.Accent,
+        Text=Name, TextColor3=Color3.new(1,1,1), TextSize=10, Font=Enum.Font.GothamBold, Parent=Page
+    })
+    New("UICorner", {CornerRadius=UDim.new(0,6), Parent=Btn})
+    
+    Btn.MouseEnter:Connect(function() TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundTransparency=0.2}):Play() end)
+    Btn.MouseLeave:Connect(function() TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundTransparency=0}):Play() end)
+    
+    Btn.MouseButton1Click:Connect(Callback)
+end
+
+-- REAL-TIME SYSTEM LOG PANEL (Premium Integrated)
+local LogPanel = nil
+local function AddLog(msg, type)
+    if not LogPanel then return end
+    local color = type == "kick" and Color3.fromRGB(255,80,80) or 
+                  type == "ban" and Color3.fromRGB(255,30,30) or 
+                  type == "info" and CFG.Accent or CFG.Text
+    
+    local timeStr = os.date("%H:%M:%S")
+    LogPanel.Text = string.format("[%s] %s\n%s", timeStr, msg, LogPanel.Text)
+    
+    -- Limit log lines to prevent memory leak
+    local lines = {}
+    for line in LogPanel.Text:gmatch("[^\n]+") do
+        table.insert(lines, line)
+        if #lines > 40 then break end
+    end
+    LogPanel.Text = table.concat(lines, "\n")
+end
+
+local function CreateLogPanel()
+    LogPanel = New("TextLabel", {
+        Size=UDim2.new(1,-12,0,90), Position=UDim2.new(0,6,1,-100),
+        BackgroundColor3=Color3.fromRGB(10,10,10), BorderSizePixel=0,
+        Text="[SYSTEM] Initializing...\n", 
+        TextColor3=CFG.Text, TextSize=9, 
+        Font=Enum.Font.Code, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top,
+        Parent=Main
+    })
+    New("UICorner", {CornerRadius=UDim.new(0,8), Parent=LogPanel})
+    New("UIStroke", {Color=CFG.Accent, Thickness=1, Transparency=0.6, Parent=LogPanel})
+end
+
+-- PLAYER SELECTOR + DOXX (Premium Compact)
+local SelectedPlr = nil
+local DoxxLabel = nil
+local PlayerListFrame = nil
+local SearchBox = nil
+
+local function UpdatePlayerList(filterText)
+    if not PlayerListFrame then return end
+    
+    for _,child in ipairs(PlayerListFrame:GetChildren()) do
+        if child:IsA("GuiObject") and child.Name ~= "UIListLayout" then child:Destroy() end
+    end
+    
+    local count = 0
+    for _,plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local name = plr.Name
+            if not filterText or string.find(string.lower(name), string.lower(filterText)) then
+                count += 1
+                local B = New("TextButton", {
+                    Size=UDim2.new(1,0,0,24), BackgroundColor3=Color3.fromRGB(25,25,25),
+                    Text=name, TextColor3=CFG.Text, TextSize=10, Font=Enum.Font.GothamMedium, Parent=PlayerListFrame
+                })
+                New("UICorner", {CornerRadius=UDim.new(0,5), Parent=B})
+                
+                if SelectedPlr == plr then B.BackgroundColor3 = CFG.Accent end
+                
+                B.MouseButton1Click:Connect(function()
+                    SelectedPlr = plr
+                    for _,btn in ipairs(PlayerListFrame:GetChildren()) do
+                        if btn:IsA("TextButton") then btn.BackgroundColor3 = Color3.fromRGB(25,25,25) end
+                    end
+                    B.BackgroundColor3 = CFG.Accent
+                    
+                    DoxxLabel.Text = string.format(
+                        "NAME: %s\nID: %d\nAGE: %d days",
+                        plr.Name, plr.UserId, 
+                        math.floor((os.time() - plr.AccountAge * 86400) / 86400)
+                    )
+                end)
+            end
+        end
+    end
+    
+    PlayerListFrame.CanvasSize = UDim2.new(0, 0, 0, count * 26 + 12)
+end
+
+local function CreatePlayerSelectorWithSearch(Page)
+    local Box = New("Frame", {Size=UDim2.new(1,0,0,170), BackgroundColor3=Color3.fromRGB(18,18,18), BorderSizePixel=0, Parent=Page})
+    New("UICorner", {CornerRadius=UDim.new(0,6), Parent=Box})
+    New("TextLabel", {Size=UDim2.new(1,0,0,18), BackgroundTransparency=1, Text="TARGET SELECTOR + SEARCH", TextColor3=CFG.Accent, TextSize=10, Font=Enum.Font.GothamBold, Parent=Box})
+    
+    SearchBox = New("TextBox", {
+        Size=UDim2.new(1,-10,0,24), Position=UDim2.new(0,5,0,20),
+        BackgroundColor3=Color3.fromRGB(22,22,22), BorderSizePixel=0,
+        PlaceholderText="Search player...", PlaceholderColor3=Color3.fromRGB(80,80,80),
+        Text="", TextColor3=CFG.Text, TextSize=10, Font=Enum.Font.GothamMedium,
+        ClearTextOnFocus=false, Parent=Box
+    })
+    New("UICorner", {CornerRadius=UDim.new(0,5), Parent=SearchBox})
+    
+    SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        UpdatePlayerList(SearchBox.Text)
+    end)
+    
+    PlayerListFrame = New("ScrollingFrame", {
+        Size=UDim2.new(1,-10,0,75), Position=UDim2.new(0,5,0,46),
+        BackgroundTransparency=1, CanvasSize=UDim2.new(0,0,0,100),
+        ScrollBarThickness=3, Parent=Box
+    })
+    New("UIListLayout", {Padding=UDim.new(0,3), Parent=PlayerListFrame})
+    
+    DoxxLabel = New("TextLabel", {
+        Size=UDim2.new(1,-10,0,45), Position=UDim2.new(0,5,1,-48),
+        BackgroundColor3=Color3.fromRGB(22,22,22), BorderSizePixel=0,
+        Text="Select player...", TextColor3=CFG.Text, TextSize=9, 
+        Font=Enum.Font.Code, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top,
+        Parent=Box
+    })
+    New("UICorner", {CornerRadius=UDim.new(0,5), Parent=DoxxLabel})
+    
+    UpdatePlayerList("")
+    Players.PlayerAdded:Connect(function() wait(0.5); UpdatePlayerList(SearchBox.Text) end)
+    Players.PlayerRemoving:Connect(function() wait(0.5); UpdatePlayerList(SearchBox.Text) end)
+end
+
+-- ================= CREATE TABS =================
+local PgMove = CreateTab("Movement")
+local PgCombat = CreateTab("Combat")
+local PgVisuals = CreateTab("Visuals")
+local PgWorld = CreateTab("World")
+local PgMisc = CreateTab("Misc")
+local PgAdmin = CreateTab("Admin")
+local PgExploit = CreateTab("Exploit")
+local PgAutoMod = CreateTab("Auto-Mod")
+local PgSilent = CreateTab("Silent")
+local PgFakeChat = CreateTab("Fake Chat")
+local PgSettings = CreateTab("Settings")
+
+Pages["Movement"].Visible=true
+for _,c in ipairs(Sidebar:GetChildren()) do
+    if c:IsA("TextButton") and c.Text=="Movement" then 
+        TweenService:Create(c, TweenInfo.new(0.15), {BackgroundColor3=Color3.fromRGB(40,40,40), TextColor3=CFG.Accent}):Play()
+    end
+end
+
+-- Initialize Log Panel
+CreateLogPanel()
+AddLog("System initialized", "info")
+
+-- ================= MOVEMENT (Premium Compact) =================
+_G.FlySpd = 80
+local BV = nil
+
+Toggle(PgMove, "Fly (Fixed)", function(S)
+    if S then
+        Humanoid.PlatformStand=true
+        BV = New("BodyVelocity", {Velocity=Vector3.new(0,0,0), MaxForce=Vector3.new(math.huge,math.huge,math.huge), P=5000, Parent=RootPart})
+    else
+        Humanoid.PlatformStand=false
+        if BV then BV:Destroy(); BV=nil end
+        RootPart.Velocity=Vector3.new(0,0,0)
+    end
+end)
+Slider(PgMove, "Fly Speed", 10, 300, 80, function(V) _G.FlySpd=V end)
+Toggle(PgMove, "No Clip", function(S)
+    for _,P in pairs(Character:GetDescendants()) do if P:IsA("BasePart") then P.CanCollide=not S end end
+end)
+Slider(PgMove, "WalkSpeed", 16, 500, 16, function(V) Humanoid.WalkSpeed=V end)
+Slider(PgMove, "JumpPower", 50, 1000, 50, function(V) Humanoid.JumpPower=V; Humanoid.UseJumpPower=true end)
+Toggle(PgMove, "Infinite Jump", function(S)
+    if S then Humanoid.StateChanged:Connect(function(_,n) if n==Enum.HumanoidStateType.Freefall then Humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end end) end
+end)
+
+-- ================= COMBAT (Premium Compact) =================
+CreatePlayerSelectorWithSearch(PgCombat)
+
+ActionBtn(PgCombat, "FAST EXTREME BAN KICK", Color3.fromRGB(255,30,30), function()
+    if SelectedPlr and SelectedPlr.Character then
+        AddLog("Ban Kick: "..SelectedPlr.Name, "ban")
+        pcall(function() SelectedPlr.Character:BreakJoints() end)
+        pcall(function() SelectedPlr.Character:Destroy() end)
+        task.spawn(function()
+            for i=1,200 do
+                pcall(function()
+                    local rem = Workspace:FindFirstChild("Damage") or Workspace:FindFirstChild("Hit")
+                    if rem and rem:IsA("RemoteEvent") then rem:FireServer(SelectedPlr.Character) end
+                end)
+                wait(0.001)
+            end
+        end)
+    else
+        AddLog("No target selected", "info")
+    end
+end)
+
+ActionBtn(PgCombat, "Fling Target", Color3.fromRGB(255,100,50), function()
+    if SelectedPlr and SelectedPlr.Character and SelectedPlr.Character:FindFirstChild("HumanoidRootPart") then
+        local T=SelectedPlr.Character.HumanoidRootPart
+        local F=New("BodyVelocity",{Velocity=Vector3.new(0,800,0),MaxForce=Vector3.new(math.huge,math.huge,math.huge),P=50000,Parent=T})
+        task.spawn(function() wait(0.2); F.Velocity=Vector3.new(math.random(-800,800),800,math.random(-800,800)); wait(3); F:Destroy() end)
+        AddLog("Fling: "..SelectedPlr.Name, "kick")
+    end
+end)
+
+ActionBtn(PgCombat, "Grab Target", CFG.Accent, function()
+    if SelectedPlr and SelectedPlr.Character and SelectedPlr.Character:FindFirstChild("HumanoidRootPart") then
+        SelectedPlr.Character.HumanoidRootPart.CFrame = RootPart.CFrame * CFrame.new(0,0,-3)
+        AddLog("Grabbed: "..SelectedPlr.Name, "info")
+    end
+end)
+
+ActionBtn(PgCombat, "Teleport To", CFG.Accent, function()
+    if SelectedPlr and SelectedPlr.Character and SelectedPlr.Character:FindFirstChild("HumanoidRootPart") then
+        RootPart.CFrame = SelectedPlr.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,3)
+        AddLog("TP to: "..SelectedPlr.Name, "info")
+    end
+end)
+
+ActionBtn(PgCombat, "Kill Aura", Color3.fromRGB(255,50,50), function()
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=LocalPlayer and p.Character then pcall(function() p.Character:BreakJoints() end) end
+    end
+    AddLog("Kill Aura active", "kick")
+end)
+
+-- ================= VISUALS (Premium Compact) =================
+Toggle(PgVisuals, "Chams ESP", function(S)
+    if S then for _,p in pairs(Players:GetPlayers()) do if p~=LocalPlayer and p.Character then New("Highlight",{FillColor=CFG.Accent,OutlineColor=Color3.new(0,0,0),FillTransparency=0.6,Parent=p.Character}) end end
+    else for _,p in pairs(Players:GetPlayers()) do if p.Character then local h=p.Character:FindFirstChildOfClass("Highlight"); if h then h:Destroy() end end end end
+end)
+Toggle(PgVisuals, "NameTags", function(S)
+    if S then for _,p in pairs(Players:GetPlayers()) do if p~=LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then local t=New("BillboardGui",{Size=UDim2.new(0,80,0,25),AlwaysOnTop=true,StudsOffset=Vector3.new(0,2,0),Parent=p.Character.Head}); New("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text=p.Name,TextColor3=CFG.Accent,TextSize=12,Font=Enum.Font.GothamBold,Parent=t}) end end
+    else for _,p in pairs(Players:GetPlayers()) do if p.Character and p.Character:FindFirstChild("Head") then local t=p.Character.Head:FindFirstChildOfClass("BillboardGui"); if t then t:Destroy() end end end end
+end)
+Toggle(PgVisuals, "Tracers", function(S)
+    if S then
+        for _,p in pairs(Players:GetPlayers()) do
+            if p~=LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local att=New("Attachment",{Parent=p.Character.HumanoidRootPart})
+                local att2=New("Attachment",{Parent=Camera})
+                local beam=New("Beam",{Attachment0=att,Attachment1=att2,Width0=0.5,Width1=0.5,Color=ColorSequence.new(CFG.Accent),Transparency=NumberSequence.new(0.5),Parent=p.Character.HumanoidRootPart})
+            end
+        end
+    else
+        for _,p in pairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local b=p.Character.HumanoidRootPart:FindFirstChildOfClass("Beam")
+                if b then b:Destroy() end
+                local a=p.Character.HumanoidRootPart:FindFirstChildOfClass("Attachment")
+                if a then a:Destroy() end
+            end
+        end
+    end
+end)
+Toggle(PgVisuals, "Fullbright", function(S) if S then Lighting.Brightness=2; Lighting.ClockTime=14; Lighting.FogEnd=100000 else Lighting.Brightness=1; Lighting.ClockTime=17.5; Lighting.FogEnd=1000 end end)
+Toggle(PgVisuals, "Show FPS", function(S)
+    if S then
+        local fps=New("TextLabel",{Size=UDim2.new(0,55,0,20),Position=UDim2.new(0,8,0,8),BackgroundTransparency=1,Text="FPS: 0",TextColor3=CFG.Accent,TextSize=11,Font=Enum.Font.GothamBold,Parent=Screen})
+        local count=0; local last=os.clock()
+        RunService.RenderStepped:Connect(function()
+            count+=1
+            if os.clock()-last>=1 then fps.Text="FPS: "..count; count=0; last=os.clock() end
+        end)
+    else
+        for _,c in ipairs(Screen:GetChildren()) do if c:IsA("TextLabel") and c.Text:find("FPS") then c:Destroy() end end
+    end
+end)
+
+-- ================= WORLD (Premium Compact) =================
+Toggle(PgWorld, "Remove Fog", function(S) if Workspace.Terrain then Workspace.Terrain.FogEnd=S and 100000 or 1000 end end)
+Toggle(PgWorld, "No Shadows", function(S) Lighting.GlobalShadows=not S end)
+Toggle(PgWorld, "Disable Particles", function(S)
+    if S then for _,p in pairs(Workspace:GetDescendants()) do if p:IsA("ParticleEmitter") then p.Enabled=false end end
+    else for _,p in pairs(Workspace:GetDescendants()) do if p:IsA("ParticleEmitter") then p.Enabled=true end end end
+end)
+
+-- ================= MISC (Premium Compact) =================
+ActionBtn(PgMisc, "Rejoin Server", CFG.Accent, function() 
+    game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId)
+    AddLog("Rejoining...", "info")
+end)
+Toggle(PgMisc, "Anti-AFK", function(S)
+    if S then 
+        local vu=game:GetService("VirtualUser")
+        game:GetService("Players").LocalPlayer.Idled:connect(function() 
+            vu:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
+            wait(1)
+            vu:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame) 
+        end)
+        AddLog("Anti-AFK on", "info")
+    end
+end)
+
+-- ================= ADMIN (Premium Compact) =================
+ActionBtn(PgAdmin, "Announce Message", CFG.Accent, function()
+    local msg="[SKYFALL] Server protected by v13.0"
+    if TextChatService.ChatVersion==Enum.ChatVersion.LegacyChatService then
+        ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents"):FindFirstChild("SayMessageRequest"):FireServer(msg,"All")
+    else
+        local ch=TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+        if ch then ch:SendAsync(msg) end
+    end
+    AddLog("Announcement sent", "info")
+end)
+ActionBtn(PgAdmin, "Kick All", Color3.fromRGB(255,50,50), function()
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=LocalPlayer and p.Character then pcall(function() p.Character:BreakJoints() end) end
+    end
+    AddLog("Kick all attempted", "kick")
+end)
+
+-- ================= EXPLOIT (Smart Overflow) =================
+ActionBtn(PgExploit, "Remote Spy", CFG.Accent, function()
+    local spy = New("ScreenGui", {Name="RemoteSpy", ResetOnSpawn=false, IgnoreGuiInset=true, Parent=CoreGui})
+    local log = New("TextLabel", {
+        Size=UDim2.new(0,300,0,400), Position=UDim2.new(0,8,0,8),
+        BackgroundColor3=Color3.fromRGB(10,10,10), BorderSizePixel=0,
+        Text="REMOTE SPY ACTIVE\n", TextColor3=CFG.Accent, TextSize=10, 
+        Font=Enum.Font.Code, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top,
+        Parent=spy
+    })
+    New("UICorner", {CornerRadius=UDim.new(0,7), Parent=log})
+    
+    local count = 0
+    for _,desc in ipairs(ReplicatedStorage:GetDescendants()) do
+        if desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") then
+            desc.OnClientEvent:Connect(function(...)
+                count += 1
+                local args = {...}
+                local argStr = ""
+                for i,v in ipairs(args) do argStr = argStr .. tostring(v) .. ", " end
+                log.Text = log.Text .. "\n[" .. count .. "] " .. desc:GetFullName() .. " -> " .. argStr
+                if count > 50 then log.Text = "REMOTE SPY ACTIVE\n[Limit]" end
+            end)
+        end
+    end
+    AddLog("Remote Spy on", "info")
+end)
+
+ActionBtn(PgExploit, "Dump Remotes", CFG.Accent, function()
+    local found={}
+    for _,c in ipairs(ReplicatedStorage:GetDescendants()) do
+        if c:IsA("RemoteEvent") or c:IsA("RemoteFunction") then table.insert(found,c:GetFullName()) end
+    end
+    setclipboard(table.concat(found,"\n"))
+    AddLog(#found.." remotes dumped", "info")
+end)
+
+Toggle(PgExploit, "Anti-Cheat Bypass", function(S)
+    if S then
+        for _,script in ipairs(game:GetDescendants()) do
+            if script:IsA("LocalScript") and (string.find(script.Name, "Anti") or string.find(script.Name, "Che")) then
+                pcall(function() script.Disabled = true end)
+            end
+        end
+        AddLog("AC bypass attempted", "info")
+    end
+end)
+
+-- ================= AUTO-MOD (Premium Compact) =================
+local ToxicKeywords = {"toxic", "stupid", "idiot", "noob", "hack", "exploit"}
+local AutoModActive = false
+
+Toggle(PgAutoMod, "Enable Auto-Mod", function(S)
+    AutoModActive = S
+    if S then
+        AddLog("Auto-Mod V3 active", "info")
+        
+        if TextChatService.ChatVersion == Enum.ChatVersion.LegacyChatService then
+            ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents"):FindFirstChild("OnMessageDoneFiltering").OnClientEvent:Connect(function(msgData)
+                if AutoModActive and msgData.FromUserId ~= LocalPlayer.UserId then
+                    local lowerMsg = string.lower(msgData.Message)
+                    local toxicityScore = 0
+                    for _,keyword in ipairs(ToxicKeywords) do
+                        if string.find(lowerMsg, keyword) then toxicityScore += 1 end
+                    end
+                    
+                    if toxicityScore >= 2 then
+                        local target = Players:GetPlayerByUserId(msgData.FromUserId)
+                        if target then
+                            AddLog("Toxic: "..target.Name, "kick")
+                            pcall(function()
+                                for i=1,30 do
+                                    local rem = Workspace:FindFirstChild("Report") or Workspace:FindFirstChild("Moderation")
+                                    if rem and rem:IsA("RemoteEvent") then rem:FireServer(target.UserId, "toxicity") end
+                                end
+                            end)
+                            pcall(function() target.Character:BreakJoints() end)
+                        end
+                    end
+                end
+            end)
+        end
+    else
+        AddLog("Auto-Mod off", "info")
+    end
+end)
+
+-- ================= SILENT REPORT (Premium Compact) =================
+ActionBtn(PgSilent, "SILENT PHANTOM (1000x)", Color3.fromRGB(255,30,30), function()
+    if SelectedPlr and SelectedPlr.Character then
+        AddLog("Silent Report: "..SelectedPlr.Name, "ban")
+        
+        task.spawn(function()
+            for i=1,1000 do
+                pcall(function()
+                    local rem = Workspace:FindFirstChild("Report") or Workspace:FindFirstChild("Moderation") or ReplicatedStorage:FindFirstChild("Report")
+                    if rem and rem:IsA("RemoteEvent") then
+                        rem:FireServer(SelectedPlr.UserId, "silent_violation_"..i)
+                    end
+                    
+                    for _,part in ipairs(SelectedPlr.Character:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            pcall(function() part:SetNetworkOwner(nil) end)
+                            wait(0.0001)
+                        end
+                    end
+                end)
+                wait(0.0005)
+            end
+        end)
+        
+        pcall(function() SelectedPlr.Character:BreakJoints() end)
+        pcall(function() SelectedPlr.Character:Destroy() end)
+        
+        AddLog("Silent Report done", "ban")
+    else
+        AddLog("No target", "info")
+    end
+end)
+
+-- ================= FAKE CHAT (Premium Compact) =================
+local FakeChatInput = nil
+
+local function CreateFakeChatInterface(Page)
+    local Box = New("Frame", {Size=UDim2.new(1,0,0,170), BackgroundColor3=Color3.fromRGB(18,18,18), BorderSizePixel=0, Parent=Page})
+    New("UICorner", {CornerRadius=UDim.new(0,6), Parent=Box})
+    New("TextLabel", {Size=UDim2.new(1,0,0,18), BackgroundTransparency=1, Text="FAKE CHAT FRAME", TextColor3=CFG.Accent, TextSize=10, Font=Enum.Font.GothamBold, Parent=Box})
+    
+    FakeChatInput = New("TextBox", {
+        Size=UDim2.new(1,-10,0,55), Position=UDim2.new(0,5,0,20),
+        BackgroundColor3=Color3.fromRGB(22,22,22), BorderSizePixel=0,
+        PlaceholderText="Enter toxic message...", PlaceholderColor3=Color3.fromRGB(80,80,80),
+        Text="", TextColor3=CFG.Text, TextSize=10, Font=Enum.Font.GothamMedium,
+        MultiLine=true, ClearTextOnFocus=false, Parent=Box
+    })
+    New("UICorner", {CornerRadius=UDim.new(0,5), Parent=FakeChatInput})
+    
+    ActionBtn(Box, "SEND + AUTO-REPORT 100x", Color3.fromRGB(255,50,50), function()
+        if SelectedPlr and FakeChatInput.Text ~= "" then
+            AddLog("Fake Chat: "..SelectedPlr.Name, "ban")
+            
+            pcall(function()
+                if TextChatService.ChatVersion == Enum.ChatVersion.LegacyChatService then
+                    ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents"):FindFirstChild("SayMessageRequest"):FireServer(FakeChatInput.Text, "All")
+                else
+                    local ch = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+                    if ch then ch:SendAsync(FakeChatInput.Text) end
+                end
+            end)
+            
+            task.spawn(function()
+                wait(0.3)
+                for i=1,100 do
+                    pcall(function()
+                        if TextChatService.ChatVersion == Enum.ChatVersion.LegacyChatService then
+                            ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents"):FindFirstChild("SayMessageRequest"):FireServer("[REPORT] "..SelectedPlr.Name..": "..FakeChatInput.Text.." #"..i, "All")
+                        else
+                            local ch = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+                            if ch then ch:SendAsync("[REPORT] "..SelectedPlr.Name..": "..FakeChatInput.Text.." #"..i) end
+                        end
+                    end)
+                    wait(0.008)
+                end
+            end)
+            
+            AddLog("Fake Chat sent & reported", "ban")
+        else
+            AddLog("Select target & enter text", "info")
+        end
+    end)
+end
+
+CreateFakeChatInterface(PgFakeChat)
+
+-- ================= SETTINGS (FIXED + DYNAMIC ZOOM SLIDER) =================
+local function ColorPickerButton(Page, Name, ColorVal)
+    local Btn = New("TextButton", {Size=UDim2.new(0.18,-2,0,26), BackgroundColor3=ColorVal, Text="", Parent=Page})
+    New("UICorner", {CornerRadius=UDim.new(1,0), Parent=Btn})
+    New("UIStroke", {Color=Color3.fromRGB(255,255,255), Thickness=1, Parent=Btn})
+    Btn.MouseButton1Click:Connect(function()
+        CFG.Accent=ColorVal
+        Stroke.Color=ColorVal
+        FloatStroke.Color=ColorVal
+        for _,c in ipairs(Sidebar:GetChildren()) do
+            if c:IsA("TextButton") and c.TextColor3==CFG.Accent then c.TextColor3=ColorVal end
+        end
+        AddLog("Color changed", "info")
+    end)
+end
+
+New("TextLabel", {Size=UDim2.new(1,0,0,18), BackgroundTransparency=1, Text="THEME COLORS", TextColor3=CFG.Text, Font=Enum.Font.GothamBold, Parent=PgSettings})
+local ColorContainer = New("Frame", {Size=UDim2.new(1,0,0,30), BackgroundTransparency=1, Parent=PgSettings})
+New("UIListLayout", {FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,5), Parent=ColorContainer})
+ColorPickerButton(ColorContainer, "Blue", Color3.fromRGB(0,170,255))
+ColorPickerButton(ColorContainer, "Red", Color3.fromRGB(255,50,50))
+ColorPickerButton(ColorContainer, "Green", Color3.fromRGB(50,255,100))
+ColorPickerButton(ColorContainer, "Purple", Color3.fromRGB(180,50,255))
+
+Toggle(PgSettings, "RGB Animation", function(S)
+    if S then
+        local Hue=0
+        while S do
+            Hue=(Hue+0.005)%1
+            local NC=Color3.fromHSV(Hue,1,1)
+            CFG.Accent=NC
+            Stroke.Color=NC
+            FloatStroke.Color=NC
+            wait()
+        end
+        AddLog("RGB on", "info")
+    end
+end)
+
+Toggle(PgSettings, "Glassmorphism", function(S)
+    if S then
+        Main.BackgroundTransparency=0.1
+        Sidebar.BackgroundTransparency=0.1
+        Header.BackgroundTransparency=0.1
+        AddLog("Glass on", "info")
+    else
+        Main.BackgroundTransparency=0
+        Sidebar.BackgroundTransparency=0
+        Header.BackgroundTransparency=0
+    end
+end)
+
+-- DYNAMIC ZOOM SLIDER (PRECISION CONTROL)
+Slider(PgSettings, "GUI Scale %", 70, 150, 100, function(V)
+    local scale = V / 100
+    local newSizeX = math.clamp(CFG.CurrentSize.X * scale, CFG.MinSize.X, CFG.MaxSize.X)
+    local newSizeY = math.clamp(CFG.CurrentSize.Y * scale, CFG.MinSize.Y, CFG.MaxSize.Y)
+    
+    Main.Size = UDim2.new(0, newSizeX, 0, newSizeY)
+    Main.Position = UDim2.new(0.5, -newSizeX/2, 0.5, -newSizeY/2)
+    
+    AddLog("GUI scaled to "..V.."%", "info")
+end)
+
+Toggle(PgSettings, "Phantom UI", function(S)
+    if S then
+        Main.BackgroundColor3 = Color3.fromRGB(0,0,0)
+        Main.BackgroundTransparency = 0.85
+        Stroke.Transparency = 0.8
+        AddLog("Phantom UI on", "info")
+    else
+        Main.BackgroundColor3 = CFG.BG
+        Main.BackgroundTransparency = 0
+        Stroke.Transparency = 0
+    end
+end)
+
+-- FLY LOOP (MOBILE OPTIMIZED)
+RunService.RenderStepped:Connect(function(DT)
+    if BV and Humanoid.PlatformStand then
+        local Move=Vector3.new(0,0,0)
+        local Look=Camera.CFrame.LookVector
+        local Right=Camera.CFrame.RightVector
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then Move=Move+Look end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then Move=Move-Look end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then Move=Move-Right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then Move=Move+Right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then Move=Move+Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then Move=Move-Vector3.new(0,1,0) end
+        if Move.Magnitude>0 then BV.Velocity=Move.Unit*_G.FlySpd else BV.Velocity=Vector3.new(0,0,0) end
+    end
+end)
+
+-- UI INTERACTION: HIDE/SHOW WITH FLOATING LOGO
+local IsHidden=false
+HideBtn.MouseButton1Click:Connect(function()
+    IsHidden=true
+    Main.Visible=false
+    FloatBtn.Visible=true
+end)
+
+FloatBtn.MouseButton1Click:Connect(function()
+    IsHidden=false
+    Main.Visible=true
+    FloatBtn.Visible=false
+end)
+
+CloseBtn.MouseButton1Click:Connect(function() Screen:Destroy() end)
+
+-- Draggable Logic (MOVABLE POSITION)
+local DragStart, StartPos
+Header.InputBegan:Connect(function(Input)
+    if Input.UserInputType==Enum.UserInputType.Touch or Input.UserInputType==Enum.UserInputType.MouseButton1 then
+        DragStart=Input.Position; StartPos=Main.Position
+        Input.Changed:Connect(function()
+            if Input.UserInputState==Enum.UserInputState.End then else
+                local Delta=Input.Position-DragStart
+                Main.Position=UDim2.new(StartPos.X.Scale,StartPos.X.Offset+Delta.X,StartPos.Y.Scale,StartPos.Y.Offset+Delta.Y)
+            end
+        end)
+    end
+end)
+
+AddLog("TheSkyfall-Hub v13.0 REBORN loaded", "info")
+print("[SKYFALL] TheSkyfall-Hub v13.0 REBORN Loaded. Premium Base UI. Dynamic Zoom. Movable Position.")
