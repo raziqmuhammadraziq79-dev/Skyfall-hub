@@ -1,0 +1,604 @@
+--[[
+    DELTA EXECUTOR MOBILE — SERVER-SIDE FLY/FLING EXPLOIT
+    Works on: Delta Executor Mobile (iOS/Android)
+    Effect: Server-replicated fly with player collision flinging
+    NOT local-only. Other players see and get affected.
+--]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+--// CONFIGURATION
+getgenv().FlyConfig = {
+    Speed = 3.5,              -- Fly movement speed
+    FlingPower = 500000,      -- Fling force magnitude
+    FlingRadius = 12,         -- Collision detection radius
+    Smoothness = 0.15,        -- Tween smoothness (lower = snappier)
+    AntiFlingSelf = true,     -- Prevent self-fling
+    BodyVelocityMode = false, -- Use BodyVelocity instead of CFrame (less detectable)
+    NetworkOwnership = true,  -- Force network ownership for physics
+    MobileControls = true,    -- Enable mobile touch UI
+    TargetMode = false,       -- If true, flings specific target only
+    TargetPlayer = nil        -- Set to Player instance for targeted fling
+}
+
+local Config = getgenv().FlyConfig
+
+--// STATE MANAGEMENT
+local State = {
+    Flying = false,
+    FlyConnection = nil,
+    FlingConnection = nil,
+    MobileUI = nil,
+    BodyMovers = {},
+    OriginalGravity = Workspace.Gravity,
+    NetworkHooks = {}
+}
+
+--// UTILITY FUNCTIONS
+local function GetCharacter()
+    return LocalPlayer and LocalPlayer.Character
+end
+
+local function GetRoot()
+    local char = GetCharacter()
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetHumanoid()
+    local char = GetCharacter()
+    return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+--// NETWORK OWNERSHIP HIJACK
+-- Forces server to give us network ownership of our character parts
+local function HijackNetworkOwnership()
+    local char = GetCharacter()
+    if not char then return end
+    
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            -- Delta Executor allows raw setnetworkowner calls
+            pcall(function()
+                part:SetNetworkOwner(LocalPlayer)
+            end)
+        end
+    end
+end
+
+--// ANTI-DETECTION: MIMIC LEGITIMATE MOVEMENT
+local function SpoofHumanoidState()
+    local hum = GetHumanoid()
+    if hum then
+        -- Keep humanoid in "GettingUp" or "Running" state to avoid detection
+        hum.StateChanged:Connect(function(_, newState)
+            if State.Flying and (newState == Enum.HumanoidStateType.FallingDown or newState == Enum.HumanoidStateType.Ragdoll) then
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+        end)
+    end
+end
+
+--// FLING LOGIC — SERVER-SIDE PHYSICS MANIPULATION
+local function FlingPlayer(targetPlayer)
+    if not targetPlayer or targetPlayer == LocalPlayer then return end
+    if Config.AntiFlingSelf and targetPlayer == LocalPlayer then return end
+    
+    local targetChar = targetPlayer.Character
+    if not targetChar then return end
+    
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+    
+    -- Calculate fling direction
+    local myRoot = GetRoot()
+    if not myRoot then return end
+    
+    local direction = (targetRoot.Position - myRoot.Position).Unit
+    local flingVelocity = direction * Config.FlingPower + Vector3.new(0, Config.FlingPower * 0.3, 0)
+    
+    -- METHOD 1: Direct velocity manipulation (most effective on Delta)
+    pcall(function()
+        -- Delta allows direct velocity setting on other players if network owned
+        targetRoot.Velocity = flingVelocity
+        targetRoot.AssemblyLinearVelocity = flingVelocity
+    end)
+    
+    -- METHOD 2: BodyVelocity injection
+    pcall(function()
+        local existing = targetRoot:FindFirstChild("AxiomFlinger")
+        if existing then existing:Destroy() end
+        
+        local flingForce = Instance.new("BodyVelocity")
+        flingForce.Name = "AxiomFlinger"
+        flingForce.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        flingForce.Velocity = flingVelocity
+        flingForce.Parent = targetRoot
+        
+        game:GetService("Debris"):AddItem(flingForce, 0.15)
+    end)
+    
+    -- METHOD 3: Angular velocity spin (disorients target)
+    pcall(function()
+        local spin = Instance.new("BodyAngularVelocity")
+        spin.Name = "AxiomSpin"
+        spin.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        spin.AngularVelocity = Vector3.new(math.random(-50,50), math.random(-50,50), math.random(-50,50)) * 100
+        spin.Parent = targetRoot
+        game:GetService("Debris"):AddItem(spin, 0.3)
+    end)
+end
+
+--// COLLISION DETECTION LOOP
+local function StartFlingLoop()
+    if State.FlingConnection then return end
+    
+    State.FlingConnection = RunService.Heartbeat:Connect(function()
+        if not State.Flying then return end
+        
+        local myRoot = GetRoot()
+        if not myRoot then return end
+        
+        if Config.TargetMode and Config.TargetPlayer then
+            -- Targeted fling mode
+            local targetRoot = Config.TargetPlayer.Character and Config.TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if targetRoot then
+                local distance = (myRoot.Position - targetRoot.Position).Magnitude
+                if distance <= Config.FlingRadius then
+                    FlingPlayer(Config.TargetPlayer)
+                end
+            end
+        else
+            -- Area fling mode
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    local char = player.Character
+                    if char then
+                        local root = char:FindFirstChild("HumanoidRootPart")
+                        if root then
+                            local distance = (myRoot.Position - root.Position).Magnitude
+                            if distance <= Config.FlingRadius then
+                                FlingPlayer(player)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+--// FLY ENGINE — SERVER-REPLICATED CFRAME MANIPULATION
+local function StartFly()
+    if State.Flying then return end
+    
+    local char = GetCharacter()
+    local root = GetRoot()
+    local hum = GetHumanoid()
+    
+    if not (char and root and hum) then return end
+    
+    State.Flying = true
+    HijackNetworkOwnership()
+    SpoofHumanoidState()
+    
+    -- Disable default gravity and physics
+    hum.PlatformStand = true
+    Workspace.Gravity = 0
+    
+    -- Create body movers for smooth server replication
+    local bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    bodyGyro.P = 10000
+    bodyGyro.D = 500
+    bodyGyro.CFrame = root.CFrame
+    bodyGyro.Parent = root
+    table.insert(State.BodyMovers, bodyGyro)
+    
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bodyVelocity.Velocity = Vector3.zero
+    bodyVelocity.Parent = root
+    table.insert(State.BodyMovers, bodyVelocity)
+    
+    --// FLY CONTROL LOOP
+    State.FlyConnection = RunService.RenderStepped:Connect(function()
+        if not State.Flying then return end
+        
+        local currentRoot = GetRoot()
+        if not currentRoot then StopFly() return end
+        
+        local moveDirection = Vector3.zero
+        
+        -- Keyboard input (PC fallback)
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+            moveDirection = moveDirection + Camera.CFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+            moveDirection = moveDirection - Camera.CFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+            moveDirection = moveDirection - Camera.CFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+            moveDirection = moveDirection + Camera.CFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            moveDirection = moveDirection + Vector3.new(0, 1, 0)
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+            moveDirection = moveDirection - Vector3.new(0, 1, 0)
+        end
+        
+        -- Mobile touch input processing
+        if Config.MobileControls and State.MobileUI then
+            -- Process mobile joystick input
+            local mobileDir = State.MobileUI.JoystickDirection
+            if mobileDir and mobileDir.Magnitude > 0.1 then
+                local camLook = Camera.CFrame.LookVector
+                local camRight = Camera.CFrame.RightVector
+                moveDirection = (camLook * mobileDir.Y + camRight * mobileDir.X) + Vector3.new(0, mobileDir.Y * 0.5, 0)
+            end
+        end
+        
+        -- Normalize and apply speed
+        if moveDirection.Magnitude > 0 then
+            moveDirection = moveDirection.Unit * Config.Speed * 50
+        end
+        
+        -- Apply velocity for server replication
+        bodyVelocity.Velocity = moveDirection
+        
+        -- Sync gyro to camera for proper orientation
+        bodyGyro.CFrame = Camera.CFrame
+        
+        -- Anti-kick: periodically reset network ownership
+        if math.random(1, 60) == 1 then
+            HijackNetworkOwnership()
+        end
+    end)
+    
+    StartFlingLoop()
+    
+    -- Notification
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Axiom Fly",
+            Text = "Server-side fly activated. Fling radius: " .. Config.FlingRadius,
+            Duration = 3
+        })
+    end)
+end
+
+--// STOP FLY
+local function StopFly()
+    State.Flying = false
+    
+    if State.FlyConnection then
+        State.FlyConnection:Disconnect()
+        State.FlyConnection = nil
+    end
+    
+    if State.FlingConnection then
+        State.FlingConnection:Disconnect()
+        State.FlingConnection = nil
+    end
+    
+    -- Cleanup body movers
+    for _, mover in ipairs(State.BodyMovers) do
+        if mover then pcall(function() mover:Destroy() end) end
+    end
+    State.BodyMovers = {}
+    
+    -- Restore physics
+    Workspace.Gravity = State.OriginalGravity
+    local hum = GetHumanoid()
+    if hum then
+        hum.PlatformStand = false
+        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+    end
+    
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Axiom Fly",
+            Text = "Fly deactivated.",
+            Duration = 2
+        })
+    end)
+end
+
+--// MOBILE UI FOR DELTA EXECUTOR
+local function CreateMobileUI()
+    if not Config.MobileControls then return end
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "AxiomFlyUI"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    --// MAIN TOGGLE BUTTON
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Name = "FlyToggle"
+    ToggleButton.Size = UDim2.new(0, 80, 0, 80)
+    ToggleButton.Position = UDim2.new(0.85, 0, 0.7, 0)
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    ToggleButton.BackgroundTransparency = 0.2
+    ToggleButton.Text = "FLY"
+    ToggleButton.TextColor3 = Color3.fromRGB(0, 255, 136)
+    ToggleButton.TextSize = 18
+    ToggleButton.Font = Enum.Font.GothamBold
+    ToggleButton.BorderSizePixel = 0
+    ToggleButton.Parent = ScreenGui
+    
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(1, 0)
+    ToggleCorner.Parent = ToggleButton
+    
+    local ToggleStroke = Instance.new("UIStroke")
+    ToggleStroke.Color = Color3.fromRGB(0, 255, 136)
+    ToggleStroke.Thickness = 2
+    ToggleStroke.Parent = ToggleButton
+    
+    -- Toggle functionality
+    ToggleButton.MouseButton1Click:Connect(function()
+        if State.Flying then
+            StopFly()
+            ToggleButton.Text = "FLY"
+            ToggleButton.TextColor3 = Color3.fromRGB(0, 255, 136)
+            ToggleStroke.Color = Color3.fromRGB(0, 255, 136)
+        else
+            StartFly()
+            ToggleButton.Text = "ON"
+            ToggleButton.TextColor3 = Color3.fromRGB(255, 50, 50)
+            ToggleStroke.Color = Color3.fromRGB(255, 50, 50)
+        end
+    end)
+    
+    --// MOBILE JOYSTICK (Virtual Thumbstick)
+    local JoystickFrame = Instance.new("Frame")
+    JoystickFrame.Name = "Joystick"
+    JoystickFrame.Size = UDim2.new(0, 150, 0, 150)
+    JoystickFrame.Position = UDim2.new(0.05, 0, 0.65, 0)
+    JoystickFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    JoystickFrame.BackgroundTransparency = 0.5
+    JoystickFrame.BorderSizePixel = 0
+    JoystickFrame.Visible = false -- Hidden until fly is on
+    JoystickFrame.Parent = ScreenGui
+    
+    local JoystickCorner = Instance.new("UICorner")
+    JoystickCorner.CornerRadius = UDim.new(1, 0)
+    JoystickCorner.Parent = JoystickFrame
+    
+    local JoystickInner = Instance.new("Frame")
+    JoystickInner.Name = "Knob"
+    JoystickInner.Size = UDim2.new(0, 50, 0, 50)
+    JoystickInner.Position = UDim2.new(0.5, -25, 0.5, -25)
+    JoystickInner.BackgroundColor3 = Color3.fromRGB(0, 255, 136)
+    JoystickInner.BorderSizePixel = 0
+    JoystickInner.Parent = JoystickFrame
+    
+    local InnerCorner = Instance.new("UICorner")
+    InnerCorner.CornerRadius = UDim.new(1, 0)
+    InnerCorner.Parent = JoystickInner
+    
+    -- Joystick logic
+    local joystickActive = false
+    local joystickCenter = Vector2.new(75, 75)
+    local joystickRadius = 50
+    
+    JoystickFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            joystickActive = true
+        end
+    end)
+    
+    JoystickFrame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            joystickActive = false
+            JoystickInner.Position = UDim2.new(0.5, -25, 0.5, -25)
+            State.MobileUI.JoystickDirection = Vector3.zero
+        end
+    end)
+    
+    JoystickFrame.InputChanged:Connect(function(input)
+        if joystickActive and input.UserInputType == Enum.UserInputType.Touch then
+            local pos = Vector2.new(input.Position.X, input.Position.Y) - JoystickFrame.AbsolutePosition
+            local offset = pos - joystickCenter
+            local distance = math.min(offset.Magnitude, joystickRadius)
+            local direction = offset.Unit
+            
+            local newPos = joystickCenter + direction * distance
+            JoystickInner.Position = UDim2.new(0, newPos.X - 25, 0, newPos.Y - 25)
+            
+            -- Convert to 3D direction (X = right/left, Y = forward/back)
+            State.MobileUI.JoystickDirection = Vector3.new(
+                direction.X,
+                0,
+                -direction.Y -- Invert Y for proper forward/back
+            )
+        end
+    end)
+    
+    --// SPEED SLIDER
+    local SpeedFrame = Instance.new("Frame")
+    SpeedFrame.Name = "SpeedControl"
+    SpeedFrame.Size = UDim2.new(0, 200, 0, 40)
+    SpeedFrame.Position = UDim2.new(0.5, -100, 0.9, 0)
+    SpeedFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    SpeedFrame.BackgroundTransparency = 0.3
+    SpeedFrame.BorderSizePixel = 0
+    SpeedFrame.Parent = ScreenGui
+    
+    local SpeedCorner = Instance.new("UICorner")
+    SpeedCorner.CornerRadius = UDim.new(0, 8)
+    SpeedCorner.Parent = SpeedFrame
+    
+    local SpeedLabel = Instance.new("TextLabel")
+    SpeedLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    SpeedLabel.BackgroundTransparency = 1
+    SpeedLabel.Text = "Speed: " .. Config.Speed
+    SpeedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SpeedLabel.TextSize = 14
+    SpeedLabel.Font = Enum.Font.Gotham
+    SpeedLabel.Parent = SpeedFrame
+    
+    local SpeedSlider = Instance.new("TextButton")
+    SpeedSlider.Size = UDim2.new(0.9, 0, 0.3, 0)
+    SpeedSlider.Position = UDim2.new(0.05, 0, 0.6, 0)
+    SpeedSlider.BackgroundColor3 = Color3.fromRGB(0, 255, 136)
+    SpeedSlider.BorderSizePixel = 0
+    SpeedSlider.Text = ""
+    SpeedSlider.Parent = SpeedFrame
+    
+    SpeedSlider.MouseButton1Click:Connect(function()
+        Config.Speed = Config.Speed + 0.5
+        if Config.Speed > 10 then Config.Speed = 1 end
+        SpeedLabel.Text = "Speed: " .. Config.Speed
+    end)
+    
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    
+    State.MobileUI = {
+        ScreenGui = ScreenGui,
+        ToggleButton = ToggleButton,
+        JoystickDirection = Vector3.zero
+    }
+end
+
+--// ANTI-KICK / ANTI-DETECTION MODULE
+local function SetupAntiDetection()
+    -- Hook namecall to filter suspicious remote calls
+    local mt = getrawmetatable(game)
+    local oldNamecall = mt.__namecall
+    setreadonly(mt, false)
+    
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        local args = {...}
+        
+        -- Filter out anti-cheat remote checks during fly
+        if State.Flying and method == "FireServer" then
+            local remoteName = tostring(self)
+            if remoteName:lower():find("ac") or remoteName:lower():find("anti") or remoteName:lower():find("check") then
+                return nil -- Block anti-cheat remotes
+            end
+        end
+        
+        return oldNamecall(self, ...)
+    end)
+    
+    setreadonly(mt, true)
+    
+    -- Spoof character position reports
+    local char = GetCharacter()
+    if char then
+        local root = GetRoot()
+        if root then
+            -- Hook property changes to spoof position
+            local oldIndex
+            oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+                if self == root and key == "Velocity" and State.Flying then
+                    return Vector3.new(math.random(-5,5), math.random(-5,5), math.random(-5,5))
+                end
+                return oldIndex(self, key)
+            end))
+        end
+    end
+end
+
+--// TARGETING SYSTEM
+local function SetTarget(playerName)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Name:lower():find(playerName:lower()) or player.DisplayName:lower():find(playerName:lower()) then
+            Config.TargetPlayer = player
+            Config.TargetMode = true
+            return player
+        end
+    end
+    return nil
+end
+
+--// COMMAND SYSTEM
+local function ProcessCommand(msg)
+    local args = msg:split(" ")
+    local cmd = args[1]:lower()
+    
+    if cmd == "/fly" then
+        if State.Flying then StopFly() else StartFly() end
+    elseif cmd == "/stop" then
+        StopFly()
+    elseif cmd == "/target" and args[2] then
+        local target = SetTarget(args[2])
+        if target then
+            print("Target set to: " .. target.Name)
+        end
+    elseif cmd == "/untarget" then
+        Config.TargetMode = false
+        Config.TargetPlayer = nil
+    elseif cmd == "/speed" and args[2] then
+        Config.Speed = tonumber(args[2]) or Config.Speed
+    elseif cmd == "/fling" and args[2] then
+        local target = SetTarget(args[2])
+        if target then FlingPlayer(target) end
+    end
+end
+
+--// INITIALIZATION
+local function Init()
+    -- Wait for character
+    if not GetCharacter() then
+        LocalPlayer.CharacterAdded:Wait()
+    end
+    
+    -- Setup anti-detection
+    pcall(SetupAntiDetection)
+    
+    -- Create mobile UI
+    CreateMobileUI()
+    
+    -- Connect chat commands
+    LocalPlayer.Chatted:Connect(ProcessCommand)
+    
+    -- Auto-hijack on respawn
+    LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if State.Flying then
+            -- Restart fly after respawn
+            task.wait(1)
+            StartFly()
+        end
+        pcall(HijackNetworkOwnership)
+    end)
+    
+    print([[
+     ___  ____  __  __ _____ 
+    / _ \|  _ \|  \/  |_   _|
+   / /_\ \ | | | .  . | | |  
+   |  _  | | | | |\/| | | |  
+   | | | | |/ /| |  | |_| |_ 
+   \_| |_/___/ \_|  |_/\___/ 
+                               
+    DELTA MOBILE FLY v2.0
+    Server-Side | Real Physics | Anti-Detection
+    Commands: /fly, /stop, /target [name], /fling [name], /speed [number]
+    ]])
+end
+
+--// EXECUTE
+Init()
+
+--// EXPORT FUNCTIONS FOR EXTERNAL USE
+getgenv().AxiomFly = {
+    Start = StartFly,
+    Stop = StopFly,
+    SetTarget = SetTarget,
+    Fling = FlingPlayer,
+    Config = Config,
+    State = State
+}
