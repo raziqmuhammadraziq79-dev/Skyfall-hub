@@ -1,0 +1,199 @@
+-- DELTA PROTOCOL MOBILE FINAL v3.5 [INTEGRATED]
+-- Author: TEN WEAK for VORD
+-- Status: Mobile Ready / Visible to Others / Undetected (Basic)
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+local Camera = Workspace.CurrentCamera
+
+-- Configuration
+local CONFIG = {
+    Title = "DELTA PROTOCOL",
+    AccentColor = Color3.fromRGB(0, 170, 255),
+    BackgroundColor = Color3.fromRGB(20, 20, 20),
+    TextColor = Color3.fromRGB(255, 255, 255),
+}
+
+local FLY_SPEED = 60
+local IS_FLYING = false
+local IS_NOCLIP = false
+local IS_INVISIBLE = false
+
+-- Utility: Create Instance
+local function CreateInstance(Class, Properties)
+    local Obj = Instance.new(Class)
+    for Prop, Val in pairs(Properties) do
+        if Prop ~= "Parent" then Obj[Prop] = Val end
+    end
+    if Properties.Parent then Obj.Parent = Properties.Parent end
+    return Obj
+end
+
+-- Main GUI
+local ScreenGui = CreateInstance("ScreenGui", {Name = "DeltaGUI", ResetOnSpawn = false, Parent = CoreGui})
+local MainFrame = CreateInstance("Frame", {
+    Name = "MainFrame", Size = UDim2.new(0, 280, 0, 350), Position = UDim2.new(0.5, -140, 0.5, -175),
+    BackgroundColor3 = CONFIG.BackgroundColor, BorderSizePixel = 0, ClipsDescendants = true, Parent = ScreenGui
+})
+CreateInstance("UICorner", {CornerRadius = UDim.new(0, 10), Parent = MainFrame})
+CreateInstance("UIStroke", {Color = CONFIG.AccentColor, Thickness = 2, Parent = MainFrame})
+
+-- Header
+local Header = CreateInstance("Frame", {Name = "Header", Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = Color3.fromRGB(30, 30, 30), Parent = MainFrame})
+CreateInstance("TextLabel", {
+    Name = "Title", Size = UDim2.new(1, -40, 1, 0), Position = UDim2.new(0, 10, 0, 0),
+    BackgroundTransparency = 1, Text = CONFIG.Title, TextColor3 = CONFIG.AccentColor,
+    TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = Header
+})
+local HideBtn = CreateInstance("TextButton", {
+    Name = "HideBtn", Size = UDim2.new(0, 30, 1, 0), Position = UDim2.new(1, -30, 0, 0),
+    BackgroundTransparency = 1, Text = "_", TextColor3 = CONFIG.TextColor, TextSize = 16, Font = Enum.Font.GothamBold, Parent = Header
+})
+
+-- Scroll Area
+local ScrollFrame = CreateInstance("ScrollingFrame", {
+    Name = "ScrollFrame", Size = UDim2.new(1, -20, 1, -60), Position = UDim2.new(0, 10, 0, 50),
+    BackgroundTransparency = 1, CanvasSize = UDim2.new(0, 260, 0, 600),
+    ScrollBarThickness = 4, ScrollBarImageColor3 = CONFIG.AccentColor, Parent = MainFrame
+})
+CreateInstance("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = ScrollFrame})
+CreateInstance("UIPadding", {PaddingBottom = UDim.new(0, 10), Parent = ScrollFrame})
+
+-- Button Factory
+local function CreateToggle(Name, Callback)
+    local Container = CreateInstance("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = Color3.fromRGB(40, 40, 40), BorderSizePixel = 0, Parent = ScrollFrame})
+    CreateInstance("UICorner", {CornerRadius = UDim.new(0, 5), Parent = Container})
+    CreateInstance("TextLabel", {
+        Size = UDim2.new(1, -60, 1, 0), Position = UDim2.new(0, 10, 0, 0), BackgroundTransparency = 1,
+        Text = Name, TextColor3 = CONFIG.TextColor, TextSize = 12, Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = Container
+    })
+    local ToggleBtn = CreateInstance("TextButton", {
+        Name = "ToggleBtn", Size = UDim2.new(0, 50, 0, 25), Position = UDim2.new(1, -55, 0.5, -12.5),
+        BackgroundColor3 = Color3.fromRGB(60, 60, 60), Text = "OFF", TextColor3 = Color3.fromRGB(200, 200, 200),
+        TextSize = 10, Font = Enum.Font.GothamBold, Parent = Container
+    })
+    CreateInstance("UICorner", {CornerRadius = UDim.new(1, 0), Parent = ToggleBtn})
+    
+    local IsActive = false
+    ToggleBtn.MouseButton1Click:Connect(function()
+        IsActive = not IsActive
+        ToggleBtn.Text = IsActive and "ON" or "OFF"
+        ToggleBtn.BackgroundColor3 = IsActive and CONFIG.AccentColor or Color3.fromRGB(60, 60, 60)
+        Callback(IsActive)
+    end)
+end
+
+-- Slider Factory
+local function CreateSlider(Name, Min, Max, Default, Callback)
+    local Container = CreateInstance("Frame", {Size = UDim2.new(1, 0, 0, 50), BackgroundColor3 = Color3.fromRGB(40, 40, 40), BorderSizePixel = 0, Parent = ScrollFrame})
+    CreateInstance("UICorner", {CornerRadius = UDim.new(0, 5), Parent = Container})
+    local Label = CreateInstance("TextLabel", {
+        Size = UDim2.new(1, -20, 0, 20), Position = UDim2.new(0, 10, 0, 5), BackgroundTransparency = 1,
+        Text = Name .. ": " .. tostring(Default), TextColor3 = CONFIG.TextColor, TextSize = 12,
+        Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = Container
+    })
+    local SliderBg = CreateInstance("Frame", {Size = UDim2.new(1, -20, 0, 10), Position = UDim2.new(0, 10, 1, -20), BackgroundColor3 = Color3.fromRGB(60, 60, 60), Parent = Container})
+    local SliderFill = CreateInstance("Frame", {Size = UDim2.new((Default - Min) / (Max - Min), 0, 1, 0), BackgroundColor3 = CONFIG.AccentColor, Parent = SliderBg})
+    CreateInstance("UICorner", {CornerRadius = UDim.new(1, 0), Parent = SliderFill})
+    
+    local Dragging = false
+    local function UpdateSlider(Input)
+        local Percent = math.clamp((Input.Position.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X, 0, 1)
+        local Value = math.floor(Min + (Max - Min) * Percent)
+        SliderFill.Size = UDim2.new(Percent, 0, 1, 0)
+        Label.Text = Name .. ": " .. tostring(Value)
+        Callback(Value)
+    end
+    SliderBg.InputBegan:Connect(function(Input)
+        if Input.UserInputType == Enum.UserInputType.Touch then Dragging = true; UpdateSlider(Input) end
+    end)
+    UserInputService.InputChanged:Connect(function(Input)
+        if Dragging and Input.UserInputType == Enum.UserInputType.Touch then UpdateSlider(Input) end
+    end)
+    UserInputService.InputEnded:Connect(function(Input)
+        if Input.UserInputType == Enum.UserInputType.Touch then Dragging = false end
+    end)
+end
+
+-- Modules Logic
+-- Fly Module (Visible to Others)
+CreateToggle("Fly Hack", function(State)
+    IS_FLYING = State
+    Humanoid.PlatformStand = State
+    if not State then RootPart.Velocity = Vector3.new(0,0,0) end
+end)
+
+CreateSlider("Fly Speed", 10, 200, 60, function(Value) FLY_SPEED = Value end)
+
+-- NoClip Module
+CreateToggle("No Clip", function(State)
+    IS_NOCLIP = State
+    for _, Part in pairs(Character:GetDescendants()) do
+        if Part:IsA("BasePart") then Part.CanCollide = not State end
+    end
+end)
+
+-- Invisible Module
+CreateToggle("Invisible", function(State)
+    IS_INVISIBLE = State
+    for _, Part in pairs(Character:GetDescendants()) do
+        if Part:IsA("BasePart") or Part:IsA("Decal") then Part.Transparency = State and 1 or 0 end
+    end
+end)
+
+-- WalkSpeed Module
+CreateSlider("Walk Speed", 16, 500, 16, function(Value) Humanoid.WalkSpeed = Value end)
+
+-- JumpPower Module
+CreateSlider("Jump Power", 50, 500, 50, function(Value) Humanoid.JumpPower = Value; Humanoid.UseJumpPower = true end)
+
+-- Draggable Logic
+local DragStart, StartPos
+Header.InputBegan:Connect(function(Input)
+    if Input.UserInputType == Enum.UserInputType.Touch then
+        DragStart = Input.Position; StartPos = MainFrame.Position
+        Input.Changed:Connect(function()
+            if Input.UserInputState == Enum.UserInputState.End then else
+                local Delta = Input.Position - DragStart
+                MainFrame.Position = UDim2.new(StartPos.X.Scale, StartPos.X.Offset + Delta.X, StartPos.Y.Scale, StartPos.Y.Offset + Delta.Y)
+            end
+        end)
+    end
+end)
+
+-- Hide/Show
+local IsHidden = false
+HideBtn.MouseButton1Click:Connect(function() IsHidden = not IsHidden; MainFrame.Visible = not IsHidden end)
+
+-- Fly Loop (Server Replication via CFrame)
+RunService.RenderStepped:Connect(function(DeltaTime)
+    if IS_FLYING then
+        local MoveDir = Vector3.new(0,0,0)
+        local CamLook = Camera.CFrame.LookVector
+        local CamRight = Camera.CFrame.RightVector
+        
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then MoveDir = MoveDir + CamLook end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then MoveDir = MoveDir - CamLook end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then MoveDir = MoveDir - CamRight end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then MoveDir = MoveDir + CamRight end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then MoveDir = MoveDir + Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then MoveDir = MoveDir - Vector3.new(0,1,0) end
+        
+        if MoveDir.Magnitude > 0 then
+            local NewPos = RootPart.Position + (MoveDir.Unit * (FLY_SPEED * DeltaTime))
+            RootPart.CFrame = CFrame.new(NewPos) * RootPart.CFrame.Rotation
+        end
+    end
+end)
+
+print("[DELTA] Mobile Integrated Protocol Loaded. Visible to others.")
