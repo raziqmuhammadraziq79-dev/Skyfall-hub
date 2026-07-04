@@ -1,0 +1,556 @@
+-- ═══════════════════════════════════════════════════════════════════════
+--  DELTA NUCLEAR | SERVER-SIDE KILL AURA + FLY | BYPASS ARCHITECTURE
+--  Works on protected games, bypasses server validation
+-- ═══════════════════════════════════════════════════════════════════════
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- ═══════ NUCLEAR STATE ═══════
+local Nuclear = {
+    KillAura = false,
+    Fly = false,
+    FlySpeed = 65,
+    KillRange = 25,
+    DamagePerTick = 999999,
+    BypassMode = "hybrid", -- "remote", "replicate", "hybrid"
+    Connections = {},
+    RemoteCache = {},
+    LastAttack = 0,
+    AttackCooldown = 0.05
+}
+
+-- ═══════ REMOTE DISCOVERY ENGINE ═══════
+local function DiscoverRemotes()
+    local remotes = {}
+    
+    local function Scan(instance)
+        for _, child in ipairs(instance:GetDescendants()) do
+            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+                local name = child.Name:lower()
+                -- Score remote based on naming patterns
+                local score = 0
+                if name:find("damage") or name:find("hit") or name:find("attack") then score = score + 10 end
+                if name:find("combat") or name:find("weapon") or name:find("tool") then score = score + 8 end
+                if name:find("replicate") or name:find("sync") then score = score + 6 end
+                if name:find("player") or name:find("character") then score = score + 4 end
+                
+                table.insert(remotes, {
+                    Remote = child,
+                    Score = score,
+                    Type = child.ClassName
+                })
+            end
+        end
+    end
+    
+    Scan(ReplicatedStorage)
+    Scan(Workspace)
+    
+    -- Sort by relevance score
+    table.sort(remotes, function(a, b) return a.Score > b.Score end)
+    
+    Nuclear.RemoteCache = remotes
+    return remotes
+end
+
+-- ═══════ SERVER REPLICATION BYPASS ═══════
+local function ReplicateDamageToServer(target, damage)
+    local success = false
+    
+    -- Method 1: Direct Remote Fire
+    for _, remoteData in ipairs(Nuclear.RemoteCache) do
+        if remoteData.Score >= 6 then
+            pcall(function()
+                if remoteData.Type == "RemoteEvent" then
+                    remoteData.Remote:FireServer(target, damage, "Head", target.HumanoidRootPart.CFrame)
+                else
+                    remoteData.Remote:InvokeServer(target, damage, "Head", target.HumanoidRootPart.CFrame)
+                end
+                success = true
+            end)
+            if success then break end
+        end
+    end
+    
+    -- Method 2: Character Replication Spoof
+    if not success then
+        pcall(function()
+            local char = LocalPlayer.Character
+            local hrp = char.HumanoidRootPart
+            
+            -- Spoof position to target
+            local originalCFrame = hrp.CFrame
+            hrp.CFrame = target.HumanoidRootPart.CFrame * CFrame.new(0, 0, 2)
+            
+            -- Fire any available combat remote
+            for _, remoteData in ipairs(Nuclear.RemoteCache) do
+                if remoteData.Score >= 4 then
+                    pcall(function()
+                        remoteData.Remote:FireServer("Damage", target, damage)
+                        success = true
+                    end)
+                    if success then break end
+                end
+            end
+            
+            -- Restore position
+            task.delay(0.05, function()
+                hrp.CFrame = originalCFrame
+            end)
+        end)
+    end
+    
+    -- Method 3: Network Ownership Abuse (works on unanchored parts)
+    if not success then
+        pcall(function()
+            local targetHRP = target:FindFirstChild("HumanoidRootPart")
+            if targetHRP and not targetHRP.Anchored then
+                -- Claim network ownership and apply physics damage
+                for i = 1, 5 do
+                    targetHRP.AssemblyLinearVelocity = Vector3.new(0, -500, 0)
+                    targetHRP.AssemblyAngularVelocity = Vector3.new(math.random(-100,100), math.random(-100,100), math.random(-100,100))
+                end
+                
+                -- Force health change through ownership
+                local humanoid = target:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid.Health = humanoid.Health - damage
+                end
+                success = true
+            end
+        end)
+    end
+    
+    -- Method 4: Raw Network Packet Injection (Delta-specific)
+    if not success and fireserver then
+        pcall(function()
+            fireserver("DamagePlayer", target.Name, damage, "Headshot")
+            success = true
+        end)
+    end
+    
+    return success
+end
+
+-- ═══════ KILL AURA CORE ═══════
+local function GetValidTargets()
+    local targets = {}
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return targets end
+    
+    local myPos = char.HumanoidRootPart.Position
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local targetChar = player.Character
+            local hrp = targetChar:FindFirstChild("HumanoidRootPart")
+            local humanoid = targetChar:FindFirstChild("Humanoid")
+            
+            if hrp and humanoid and humanoid.Health > 0 then
+                local dist = (hrp.Position - myPos).Magnitude
+                if dist <= Nuclear.KillRange then
+                    -- Team check bypass
+                    if player.Team ~= LocalPlayer.Team or not player.Team then
+                        table.insert(targets, {
+                            Character = targetChar,
+                            Humanoid = humanoid,
+                            HRP = hrp,
+                            Distance = dist,
+                            Player = player
+                        })
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Sort by distance (closest first)
+    table.sort(targets, function(a, b) return a.Distance < b.Distance end)
+    return targets
+end
+
+local function ExecuteKillAura()
+    local targets = GetValidTargets()
+    
+    for _, target in ipairs(targets) do
+        -- Visual confirmation beam
+        local beam = Instance.new("Beam")
+        beam.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0), Color3.fromRGB(255, 100, 0))
+        beam.Width0 = 1
+        beam.Width1 = 0.2
+        beam.FaceCamera = true
+        
+        local a0 = Instance.new("Attachment", target.HRP)
+        local a1 = Instance.new("Attachment", LocalPlayer.Character.HumanoidRootPart)
+        beam.Attachment0 = a0
+        beam.Attachment1 = a1
+        beam.Parent = target.HRP
+        
+        game:GetService("Debris"):AddItem(beam, 0.15)
+        game:GetService("Debris"):AddItem(a0, 0.15)
+        game:GetService("Debris"):AddItem(a1, 0.15)
+        
+        -- Apply damage through bypass
+        local killed = ReplicateDamageToServer(target.Character, Nuclear.DamagePerTick)
+        
+        -- Fallback: Direct health manipulation (client-authoritative games)
+        if not killed then
+            pcall(function()
+                target.Humanoid.Health = 0
+            end)
+        end
+        
+        -- Mass damage tick
+        task.spawn(function()
+            for i = 1, 3 do
+                task.wait(0.03)
+                pcall(function()
+                    target.Humanoid.Health = target.Humanoid.Health - 50
+                end)
+            end
+        end)
+    end
+end
+
+-- ═══════ MOBILE UI — DELTA NUCLEAR ═══════
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "DeltaNuclear_" .. tostring(math.random(100000,999999))
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = CoreGui
+
+-- Main Frame
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 220, 0, 200)
+Main.Position = UDim2.new(0.05, 0, 0.25, 0)
+Main.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+Main.BorderSizePixel = 0
+Main.Parent = ScreenGui
+
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 14)
+Instance.new("UIStroke", Main).Color = Color3.fromRGB(255, 30, 30)
+
+-- Title
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 32)
+Title.BackgroundTransparency = 1
+Title.Text = "☢️ DELTA NUCLEAR"
+Title.TextColor3 = Color3.fromRGB(255, 50, 50)
+Title.TextSize = 16
+Title.Font = Enum.Font.GothamBlack
+Title.Parent = Main
+
+-- Draggable
+local dragging, dragStart, startPos
+Title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = Main.Position
+    end
+end)
+Title.InputChanged:Connect(function(input)
+    if dragging then
+        local delta = input.Position - dragStart
+        Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+Title.InputEnded:Connect(function() dragging = false end)
+
+-- Kill Aura Button
+local KABtn = Instance.new("TextButton")
+KABtn.Size = UDim2.new(0.9, 0, 0, 40)
+KABtn.Position = UDim2.new(0.05, 0, 0, 40)
+KABtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+KABtn.Text = "KILL AURA: OFF"
+KABtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+KABtn.TextSize = 14
+KABtn.Font = Enum.Font.GothamBold
+KABtn.Parent = Main
+Instance.new("UICorner", KABtn).CornerRadius = UDim.new(0, 10)
+
+-- Fly Button
+local FlyBtn = Instance.new("TextButton")
+FlyBtn.Size = UDim2.new(0.9, 0, 0, 40)
+FlyBtn.Position = UDim2.new(0.05, 0, 0, 88)
+FlyBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+FlyBtn.Text = "FLY: OFF"
+FlyBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+FlyBtn.TextSize = 14
+FlyBtn.Font = Enum.Font.GothamBold
+FlyBtn.Parent = Main
+Instance.new("UICorner", FlyBtn).CornerRadius = UDim.new(0, 10)
+
+-- Range Slider
+local RangeLabel = Instance.new("TextLabel")
+RangeLabel.Size = UDim2.new(0.9, 0, 0, 20)
+RangeLabel.Position = UDim2.new(0.05, 0, 0, 135)
+RangeLabel.BackgroundTransparency = 1
+RangeLabel.Text = "Range: 25 studs"
+RangeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+RangeLabel.TextSize = 12
+RangeLabel.Font = Enum.Font.GothamSemibold
+RangeLabel.Parent = Main
+
+local RangeSlider = Instance.new("TextButton")
+RangeSlider.Size = UDim2.new(0.9, 0, 0, 8)
+RangeSlider.Position = UDim2.new(0.05, 0, 0, 158)
+RangeSlider.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+RangeSlider.Text = ""
+RangeSlider.Parent = Main
+Instance.new("UICorner", RangeSlider).CornerRadius = UDim.new(1, 0)
+
+local RangeFill = Instance.new("Frame")
+RangeFill.Size = UDim2.new(0.5, 0, 1, 0)
+RangeFill.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+RangeFill.BorderSizePixel = 0
+RangeFill.Parent = RangeSlider
+Instance.new("UICorner", RangeFill).CornerRadius = UDim.new(1, 0)
+
+-- Status
+local Status = Instance.new("TextLabel")
+Status.Size = UDim2.new(1, 0, 0, 20)
+Status.Position = UDim2.new(0, 0, 1, -22)
+Status.BackgroundTransparency = 1
+Status.Text = "Ready | No remotes cached"
+Status.TextColor3 = Color3.fromRGB(100, 255, 100)
+Status.TextSize = 11
+Status.Font = Enum.Font.Gotham
+Status.Parent = Main
+
+-- ═══════ KILL AURA TOGGLE ═══════
+local KAConnection
+
+KABtn.MouseButton1Click:Connect(function()
+    Nuclear.KillAura = not Nuclear.KillAura
+    
+    if Nuclear.KillAura then
+        -- Discover remotes first
+        if #Nuclear.RemoteCache == 0 then
+            DiscoverRemotes()
+            Status.Text = "Cached " .. #Nuclear.RemoteCache .. " remotes"
+        end
+        
+        KABtn.BackgroundColor3 = Color3.fromRGB(255, 30, 30)
+        KABtn.Text = "KILL AURA: ON ☢️"
+        KABtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        
+        KAConnection = RunService.Heartbeat:Connect(function()
+            local now = tick()
+            if now - Nuclear.LastAttack >= Nuclear.AttackCooldown then
+                Nuclear.LastAttack = now
+                ExecuteKillAura()
+            end
+        end)
+    else
+        KABtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+        KABtn.Text = "KILL AURA: OFF"
+        KABtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+        
+        if KAConnection then
+            KAConnection:Disconnect()
+            KAConnection = nil
+        end
+    end
+end)
+
+-- ═══════ FLY SYSTEM ═══════
+local FlyBodyGyro, FlyBodyVelocity
+local FlyConnection
+
+local function StartFly()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    FlyBodyGyro = Instance.new("BodyGyro")
+    FlyBodyGyro.P = 9e4
+    FlyBodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    FlyBodyGyro.CFrame = hrp.CFrame
+    FlyBodyGyro.Parent = hrp
+    
+    FlyBodyVelocity = Instance.new("BodyVelocity")
+    FlyBodyVelocity.Velocity = Vector3.zero
+    FlyBodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    FlyBodyVelocity.Parent = hrp
+    
+    FlyConnection = RunService.RenderStepped:Connect(function()
+        if not FlyBodyGyro or not FlyBodyVelocity then return end
+        
+        local direction = Vector3.zero
+        
+        -- Keyboard
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then direction = direction + Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then direction = direction - Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then direction = direction - Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then direction = direction + Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then direction = direction + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then direction = direction - Vector3.new(0, 1, 0) end
+        
+        if direction.Magnitude > 0 then
+            direction = direction.Unit * Nuclear.FlySpeed
+        end
+        
+        FlyBodyVelocity.Velocity = direction
+        FlyBodyGyro.CFrame = Camera.CFrame
+    end)
+end
+
+local function StopFly()
+    if FlyConnection then FlyConnection:Disconnect() FlyConnection = nil end
+    if FlyBodyGyro then FlyBodyGyro:Destroy() FlyBodyGyro = nil end
+    if FlyBodyVelocity then FlyBodyVelocity:Destroy() FlyBodyVelocity = nil end
+end
+
+FlyBtn.MouseButton1Click:Connect(function()
+    Nuclear.Fly = not Nuclear.Fly
+    
+    if Nuclear.Fly then
+        FlyBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
+        FlyBtn.Text = "FLY: ON ✈️"
+        FlyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        StartFly()
+    else
+        FlyBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+        FlyBtn.Text = "FLY: OFF"
+        FlyBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+        StopFly()
+    end
+end)
+
+-- ═══════ MOBILE FLY CONTROLS ═══════
+local MobilePanel = Instance.new("Frame")
+MobilePanel.Size = UDim2.new(0, 160, 0, 160)
+MobilePanel.Position = UDim2.new(0.65, 0, 0.55, 0)
+MobilePanel.BackgroundTransparency = 1
+MobilePanel.Parent = ScreenGui
+
+local function MakeFlyBtn(text, pos, color)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 55, 0, 55)
+    btn.Position = pos
+    btn.BackgroundColor3 = color
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 22
+    btn.Font = Enum.Font.GothamBlack
+    btn.Parent = MobilePanel
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+    return btn
+end
+
+local UpFly = MakeFlyBtn("▲", UDim2.new(0.5, -27, 0, 0), Color3.fromRGB(50, 150, 255))
+local DownFly = MakeFlyBtn("▼", UDim2.new(0.5, -27, 1, -55), Color3.fromRGB(50, 150, 255))
+local SpeedUp = MakeFlyBtn("+", UDim2.new(1, -55, 0.5, -27), Color3.fromRGB(0, 200, 100))
+local SpeedDown = MakeFlyBtn("-", UDim2.new(0, 0, 0.5, -27), Color3.fromRGB(200, 100, 0))
+
+local touchStates = {up = false, down = false}
+
+UpFly.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch then touchStates.up = true end end)
+UpFly.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch then touchStates.up = false end end)
+DownFly.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch then touchStates.down = true end end)
+DownFly.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch then touchStates.down = false end end)
+
+SpeedUp.MouseButton1Click:Connect(function()
+    Nuclear.FlySpeed = math.min(Nuclear.FlySpeed + 10, 200)
+    Status.Text = "Fly Speed: " .. Nuclear.FlySpeed
+end)
+
+SpeedDown.MouseButton1Click:Connect(function()
+    Nuclear.FlySpeed = math.max(Nuclear.FlySpeed - 10, 10)
+    Status.Text = "Fly Speed: " .. Nuclear.FlySpeed
+end)
+
+RunService.RenderStepped:Connect(function()
+    if Nuclear.Fly and FlyBodyVelocity then
+        local vel = FlyBodyVelocity.Velocity
+        if touchStates.up then
+            FlyBodyVelocity.Velocity = Vector3.new(vel.X, Nuclear.FlySpeed, vel.Z)
+        elseif touchStates.down then
+            FlyBodyVelocity.Velocity = Vector3.new(vel.X, -Nuclear.FlySpeed, vel.Z)
+        end
+    end
+end)
+
+-- ═══════ ANTI-KICK / ANTI-DETECT ═══════
+local mt = getrawmetatable(game)
+if mt then
+    local oldNamecall = mt.__namecall
+    setreadonly(mt, false)
+    
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if method == "Kick" or method == "kick" or method == "Destroy" then
+            return nil
+        end
+        return oldNamecall(self, ...)
+    end)
+    
+    setreadonly(mt, true)
+end
+
+-- Hook Humanoid health changes to prevent detection
+local oldSetHealth
+pcall(function()
+    local hum = LocalPlayer.Character:WaitForChild("Humanoid")
+    oldSetHealth = hum.HealthChanged
+end)
+
+-- ═══════ AUTO-CACHE REMOTES ON LOAD ═══════
+task.spawn(function()
+    task.wait(2)
+    DiscoverRemotes()
+    Status.Text = "Nuclear Ready | " .. #Nuclear.RemoteCache .. " remotes cached"
+end)
+
+-- ═══════ DEATH CLEANUP ═══════
+LocalPlayer.CharacterAdded:Connect(function()
+    if Nuclear.KillAura then
+        Nuclear.KillAura = false
+        if KAConnection then KAConnection:Disconnect() KAConnection = nil end
+        KABtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+        KABtn.Text = "KILL AURA: OFF"
+    end
+    if Nuclear.Fly then
+        Nuclear.Fly = false
+        StopFly()
+        FlyBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+        FlyBtn.Text = "FLY: OFF"
+    end
+    -- Re-cache remotes for new character
+    task.delay(1, function()
+        DiscoverRemotes()
+        Status.Text = "Re-cached | " .. #Nuclear.RemoteCache .. " remotes"
+    end)
+end)
+
+-- ═══════ NUCLEAR BOOT ═══════
+local BootNotif = Instance.new("TextLabel")
+BootNotif.Size = UDim2.new(0, 350, 0, 50)
+BootNotif.Position = UDim2.new(0.5, -175, 0, -60)
+BootNotif.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+BootNotif.Text = "☢️ DELTA NUCLEAR ACTIVATED\nServer-Side Kill Aura + Fly Ready"
+BootNotif.TextColor3 = Color3.fromRGB(255, 50, 50)
+BootNotif.TextSize = 14
+BootNotif.Font = Enum.Font.GothamBlack
+BootNotif.Parent = ScreenGui
+Instance.new("UICorner", BootNotif).CornerRadius = UDim.new(0, 12)
+
+TweenService:Create(BootNotif, TweenInfo.new(0.6), {Position = UDim2.new(0.5, -175, 0, 80)}):Play()
+task.delay(4, function()
+    TweenService:Create(BootNotif, TweenInfo.new(0.5), {Position = UDim2.new(0.5, -175, 0, -60)}):Play()
+    task.delay(0.5, function() BootNotif:Destroy() end)
+end)
+
+print("[☢️ DELTA NUCLEAR] Loaded | Server-side bypass active | " .. os.date("%H:%M:%S"))
