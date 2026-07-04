@@ -1,0 +1,587 @@
+--[[
+    ☢️ SKYFALL ADMIN v5.2 — DELTA MOBILE BARE BONES
+    Stripped to only Delta-safe features
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local StarterGui = game:GetService("StarterGui")
+local Lighting = game:GetService("Lighting")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+--// CONFIG
+getgenv().Skyfall = {
+    FlySpeed = 5,
+    FlyEnabled = false,
+    FlingPower = 999999,
+    KillTarget = nil,
+    SpeedHack = false,
+    WalkSpeed = 100,
+    ESP = false,
+    GodMode = false,
+    NoClip = false,
+    Aimbot = false,
+    FullBright = false
+}
+
+local Config = getgenv().Skyfall
+local State = {
+    Connections = {},
+    BodyMovers = {},
+    UI = nil,
+    JoystickDir = Vector3.zero
+}
+
+--// UTILITIES
+local function GetChar(plr)
+    plr = plr or LocalPlayer
+    return plr and plr.Character
+end
+
+local function GetRoot(plr)
+    local c = GetChar(plr)
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetHum(plr)
+    local c = GetChar(plr)
+    return c and c:FindFirstChildOfClass("Humanoid")
+end
+
+local function Notify(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "☢️ " .. title,
+            Text = text,
+            Duration = 3
+        })
+    end)
+end
+
+--// FLY
+local function StartFly()
+    if Config.FlyEnabled then return end
+    Config.FlyEnabled = true
+    
+    local root = GetRoot()
+    local hum = GetHum()
+    if not (root and hum) then return end
+    
+    Workspace.Gravity = 0
+    hum.WalkSpeed = 0
+    hum.JumpPower = 0
+    
+    local bg = Instance.new("BodyGyro")
+    bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    bg.P = 25000
+    bg.CFrame = root.CFrame
+    bg.Parent = root
+    
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bv.Velocity = Vector3.zero
+    bv.Parent = root
+    
+    State.BodyMovers.Gyro = bg
+    State.BodyMovers.Vel = bv
+    
+    State.Connections.Fly = RunService.RenderStepped:Connect(function()
+        if not Config.FlyEnabled then return end
+        local r = GetRoot()
+        if not r then StopFly() return end
+        
+        local move = Vector3.zero
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
+        
+        if State.JoystickDir.Magnitude > 0.1 then
+            local cl = Camera.CFrame.LookVector
+            local cr = Camera.CFrame.RightVector
+            move = move + (cl * State.JoystickDir.Y + cr * State.JoystickDir.X)
+        end
+        
+        if move.Magnitude > 0 then move = move.Unit * Config.FlySpeed * 60 end
+        bv.Velocity = move
+        bg.CFrame = Camera.CFrame
+    end)
+    
+    Notify("Fly", "Activated!")
+end
+
+local function StopFly()
+    if not Config.FlyEnabled then return end
+    Config.FlyEnabled = false
+    if State.Connections.Fly then State.Connections.Fly:Disconnect() State.Connections.Fly = nil end
+    if State.BodyMovers.Gyro then pcall(function() State.BodyMovers.Gyro:Destroy() end) State.BodyMovers.Gyro = nil end
+    if State.BodyMovers.Vel then pcall(function() State.BodyMovers.Vel:Destroy() end) State.BodyMovers.Vel = nil end
+    Workspace.Gravity = 196.2
+    local hum = GetHum()
+    if hum then hum.WalkSpeed = 16 hum.JumpPower = 50 end
+end
+
+--// FLING
+local function FlingPlayer(target)
+    if not target or target == LocalPlayer then return false end
+    local tr = GetRoot(target)
+    local th = GetHum(target)
+    if not (tr and th) then return false end
+    if th.Health <= 0 then return false end
+    
+    local mr = GetRoot()
+    if not mr then return false end
+    
+    local dir = (tr.Position - mr.Position).Unit
+    if dir.Magnitude < 0.01 then dir = Vector3.new(0, 1, 0) end
+    local vel = dir * Config.FlingPower + Vector3.new(0, Config.FlingPower * 0.5, 0)
+    
+    for i = 1, 5 do
+        task.delay(i * 0.05, function()
+            pcall(function()
+                tr.Velocity = vel
+                tr.AssemblyLinearVelocity = vel
+            end)
+        end)
+    end
+    
+    pcall(function()
+        local bv = Instance.new("BodyVelocity")
+        bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        bv.Velocity = vel * 2
+        bv.Parent = tr
+        game:GetService("Debris"):AddItem(bv, 0.5)
+    end)
+    
+    return true
+end
+
+local function FlingAll()
+    local count = 0
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and FlingPlayer(plr) then count = count + 1 end
+    end
+    Notify("Fling All", "Launched " .. count .. " players!")
+end
+
+--// KILL
+local function KillPlayer(target)
+    if not target then return false end
+    local th = GetHum(target)
+    if not th then return false end
+    pcall(function() th.Health = 0 end)
+    pcall(function() th:TakeDamage(9e9) end)
+    local c = GetChar(target)
+    if c then pcall(function() c:BreakJoints() end) end
+    return true
+end
+
+local function KillAll()
+    local count = 0
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and KillPlayer(plr) then count = count + 1 end
+    end
+    Notify("Kill All", "Killed " .. count .. " players!")
+end
+
+--// SPEED
+local function ToggleSpeed(enabled)
+    Config.SpeedHack = enabled
+    local hum = GetHum()
+    if not hum then return end
+    if enabled then
+        hum.WalkSpeed = Config.WalkSpeed
+        State.Connections.Speed = RunService.Heartbeat:Connect(function()
+            local h = GetHum()
+            if h and Config.SpeedHack then h.WalkSpeed = Config.WalkSpeed end
+        end)
+    else
+        if State.Connections.Speed then State.Connections.Speed:Disconnect() State.Connections.Speed = nil end
+        hum.WalkSpeed = 16
+    end
+end
+
+--// NOCLIP
+local function ToggleNoClip(enabled)
+    Config.NoClip = enabled
+    if enabled then
+        State.Connections.NoClip = RunService.Stepped:Connect(function()
+            local c = GetChar()
+            if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end end
+        end)
+    else
+        if State.Connections.NoClip then State.Connections.NoClip:Disconnect() State.Connections.NoClip = nil end
+        local c = GetChar()
+        if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
+    end
+end
+
+--// GOD
+local function ToggleGod(enabled)
+    Config.GodMode = enabled
+    local hum = GetHum()
+    if not hum then return end
+    if enabled then
+        hum.MaxHealth = 9e9
+        hum.Health = 9e9
+        State.Connections.God = hum.HealthChanged:Connect(function()
+            if Config.GodMode then hum.Health = hum.MaxHealth end
+        end)
+    else
+        if State.Connections.God then State.Connections.God:Disconnect() State.Connections.God = nil end
+        hum.MaxHealth = 100
+        hum.Health = 100
+    end
+end
+
+--// FULLBRIGHT
+local function ToggleFullBright(enabled)
+    Config.FullBright = enabled
+    if enabled then
+        Lighting.Brightness = 10
+        Lighting.GlobalShadows = false
+    else
+        Lighting.Brightness = 2
+        Lighting.GlobalShadows = true
+    end
+end
+
+--// AIMBOT
+local function ToggleAimbot(enabled)
+    Config.Aimbot = enabled
+    if enabled then
+        State.Connections.Aimbot = RunService.RenderStepped:Connect(function()
+            if not Config.Aimbot then return end
+            local closest = nil
+            local minDist = 200
+            local myRoot = GetRoot()
+            if not myRoot then return end
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer then
+                    local head = GetChar(plr) and GetChar(plr):FindFirstChild("Head")
+                    if head then
+                        local pos = Camera:WorldToViewportPoint(head.Position)
+                        local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                        if dist < minDist then minDist = dist closest = plr end
+                    end
+                end
+            end
+            if closest then
+                local head = GetChar(closest):FindFirstChild("Head")
+                if head then
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position)
+                end
+            end
+        end)
+    else
+        if State.Connections.Aimbot then State.Connections.Aimbot:Disconnect() State.Connections.Aimbot = nil end
+    end
+end
+
+--// UI
+local function CreateUI()
+    if State.UI then return end
+    
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "Skyfall"
+    sg.ResetOnSpawn = false
+    sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    
+    -- Main
+    local main = Instance.new("Frame")
+    main.Size = UDim2.new(0, 300, 0, 400)
+    main.Position = UDim2.new(0.5, -150, 0.5, -200)
+    main.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+    main.BorderSizePixel = 0
+    main.Active = true
+    main.Draggable = true
+    main.Parent = sg
+    
+    local mc = Instance.new("UICorner")
+    mc.CornerRadius = UDim.new(0, 12)
+    mc.Parent = main
+    
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+    title.Text = "☢️ SKYFALL v5.2"
+    title.TextColor3 = Color3.fromRGB(0, 255, 150)
+    title.TextSize = 20
+    title.Font = Enum.Font.GothamBold
+    title.Parent = main
+    
+    local tc = Instance.new("UICorner")
+    tc.CornerRadius = UDim.new(0, 12)
+    tc.Parent = title
+    
+    -- Close
+    local close = Instance.new("TextButton")
+    close.Size = UDim2.new(0, 30, 0, 30)
+    close.Position = UDim2.new(1, -35, 0, 5)
+    close.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+    close.Text = "X"
+    close.TextColor3 = Color3.fromRGB(255, 255, 255)
+    close.Parent = title
+    
+    close.MouseButton1Click:Connect(function() sg.Enabled = false end)
+    
+    -- Scroll
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -10, 1, -50)
+    scroll.Position = UDim2.new(0, 5, 0, 45)
+    scroll.BackgroundTransparency = 1
+    scroll.ScrollBarThickness = 3
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 800)
+    scroll.Parent = main
+    
+    local list = Instance.new("UIListLayout")
+    list.Padding = UDim.new(0, 6)
+    list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    list.Parent = scroll
+    
+    local function Btn(text, color, callback)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.95, 0, 0, 35)
+        btn.BackgroundColor3 = color or Color3.fromRGB(45, 45, 60)
+        btn.Text = text
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.TextSize = 12
+        btn.Font = Enum.Font.GothamBold
+        btn.Parent = scroll
+        
+        local bc = Instance.new("UICorner")
+        bc.CornerRadius = UDim.new(0, 8)
+        bc.Parent = btn
+        
+        btn.MouseButton1Click:Connect(callback)
+        return btn
+    end
+    
+    local function Toggle(text, callback)
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(0.95, 0, 0, 35)
+        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+        frame.Parent = scroll
+        
+        local fc = Instance.new("UICorner")
+        fc.CornerRadius = UDim.new(0, 8)
+        fc.Parent = frame
+        
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0.6, 0, 1, 0)
+        lbl.Position = UDim2.new(0, 10, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = text
+        lbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+        lbl.TextSize = 12
+        lbl.Font = Enum.Font.Gotham
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = frame
+        
+        local toggle = Instance.new("TextButton")
+        toggle.Size = UDim2.new(0, 45, 0, 24)
+        toggle.Position = UDim2.new(1, -55, 0.5, -12)
+        toggle.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+        toggle.Text = "OFF"
+        toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+        toggle.TextSize = 10
+        toggle.Font = Enum.Font.GothamBold
+        toggle.Parent = frame
+        
+        local tc2 = Instance.new("UICorner")
+        tc2.CornerRadius = UDim.new(1, 0)
+        tc2.Parent = toggle
+        
+        local enabled = false
+        toggle.MouseButton1Click:Connect(function()
+            enabled = not enabled
+            toggle.BackgroundColor3 = enabled and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(80, 80, 90)
+            toggle.Text = enabled and "ON" or "OFF"
+            callback(enabled)
+        end)
+        return frame
+    end
+    
+    -- Target dropdown
+    local targetLabel = Instance.new("TextLabel")
+    targetLabel.Size = UDim2.new(0.95, 0, 0, 20)
+    targetLabel.BackgroundTransparency = 1
+    targetLabel.Text = "🎯 TARGET:"
+    targetLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+    targetLabel.TextSize = 12
+    targetLabel.Font = Enum.Font.GothamBold
+    targetLabel.Parent = scroll
+    
+    local targetFrame = Instance.new("Frame")
+    targetFrame.Size = UDim2.new(0.95, 0, 0, 100)
+    targetFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    targetFrame.Parent = scroll
+    
+    local tfc = Instance.new("UICorner")
+    tfc.CornerRadius = UDim.new(0, 10)
+    tfc.Parent = targetFrame
+    
+    local targetScroll = Instance.new("ScrollingFrame")
+    targetScroll.Size = UDim2.new(1, -10, 1, -10)
+    targetScroll.Position = UDim2.new(0, 5, 0, 5)
+    targetScroll.BackgroundTransparency = 1
+    targetScroll.ScrollBarThickness = 2
+    targetScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    targetScroll.Parent = targetFrame
+    
+    local targetList = Instance.new("UIListLayout")
+    targetList.Padding = UDim.new(0, 3)
+    targetList.Parent = targetScroll
+    
+    local function RefreshTargets()
+        for _, c in ipairs(targetScroll:GetChildren()) do
+            if c:IsA("TextButton") then c:Destroy() end
+        end
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, 0, 0, 25)
+                btn.BackgroundColor3 = (Config.KillTarget == plr) and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(40, 40, 55)
+                btn.Text = plr.DisplayName .. " [@" .. plr.Name .. "]"
+                btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                btn.TextSize = 10
+                btn.Font = Enum.Font.Gotham
+                btn.Parent = targetScroll
+                
+                btn.MouseButton1Click:Connect(function()
+                    Config.KillTarget = plr
+                    for _, b in ipairs(targetScroll:GetChildren()) do
+                        if b:IsA("TextButton") then b.BackgroundColor3 = Color3.fromRGB(40, 40, 55) end
+                    end
+                    btn.BackgroundColor3 = Color3.fromRGB(0, 150, 80)
+                    Notify("Target", plr.DisplayName)
+                end)
+            end
+        end
+        targetScroll.CanvasSize = UDim2.new(0, 0, 0, #targetScroll:GetChildren() * 28)
+    end
+    
+    RefreshTargets()
+    Players.PlayerAdded:Connect(function() task.wait(1) RefreshTargets() end)
+    Players.PlayerRemoving:Connect(RefreshTargets)
+    
+    Btn("🔄 Refresh", Color3.fromRGB(60, 60, 80), RefreshTargets)
+    Btn("💀 Fling Target", Color3.fromRGB(180, 30, 30), function()
+        if Config.KillTarget then FlingPlayer(Config.KillTarget) else Notify("Error", "No target") end
+    end)
+    Btn("🔥 Kill Target", Color3.fromRGB(200, 60, 0), function()
+        if Config.KillTarget then KillPlayer(Config.KillTarget) else Notify("Error", "No target") end
+    end)
+    Btn("☠️ Fling All", Color3.fromRGB(200, 40, 40), FlingAll)
+    Btn("💀 Kill All", Color3.fromRGB(220, 30, 30), KillAll)
+    
+    Toggle("Fly", function(v) if v then StartFly() else StopFly() end end)
+    Toggle("Speed", ToggleSpeed)
+    Toggle("NoClip", ToggleNoClip)
+    Toggle("God", ToggleGod)
+    Toggle("Aimbot", ToggleAimbot)
+    Toggle("FullBright", ToggleFullBright)
+    
+    -- Joystick
+    local joy = Instance.new("Frame")
+    joy.Size = UDim2.new(0, 120, 0, 120)
+    joy.Position = UDim2.new(0.05, 0, 0.6, 0)
+    joy.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    joy.BackgroundTransparency = 0.3
+    joy.BorderSizePixel = 0
+    joy.Parent = sg
+    
+    local jc = Instance.new("UICorner")
+    jc.CornerRadius = UDim.new(1, 0)
+    jc.Parent = joy
+    
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 40, 0, 40)
+    knob.Position = UDim2.new(0.5, -20, 0.5, -20)
+    knob.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
+    knob.BorderSizePixel = 0
+    knob.Parent = joy
+    
+    local kc = Instance.new("UICorner")
+    kc.CornerRadius = UDim.new(1, 0)
+    kc.Parent = knob
+    
+    local joyActive = false
+    joy.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then joyActive = true end
+    end)
+    joy.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            joyActive = false
+            knob.Position = UDim2.new(0.5, -20, 0.5, -20)
+            State.JoystickDir = Vector3.zero
+        end
+    end)
+    joy.InputChanged:Connect(function(input)
+        if joyActive and input.UserInputType == Enum.UserInputType.Touch then
+            local pos = Vector2.new(input.Position.X, input.Position.Y) - joy.AbsolutePosition
+            local center = Vector2.new(60, 60)
+            local offset = pos - center
+            local dist = math.min(offset.Magnitude, 30)
+            local dir = offset.Unit
+            local newPos = center + dir * dist
+            knob.Position = UDim2.new(0, newPos.X - 20, 0, newPos.Y - 20)
+            State.JoystickDir = Vector3.new(dir.X, 0, -dir.Y) * (dist / 30)
+        end
+    end)
+    
+    -- Toggle button
+    local floatBtn = Instance.new("TextButton")
+    floatBtn.Size = UDim2.new(0, 50, 0, 50)
+    floatBtn.Position = UDim2.new(0.02, 0, 0.02, 0)
+    floatBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
+    floatBtn.Text = "☢️"
+    floatBtn.TextSize = 24
+    floatBtn.Font = Enum.Font.GothamBlack
+    floatBtn.Parent = sg
+    
+    local fbc = Instance.new("UICorner")
+    fbc.CornerRadius = UDim.new(1, 0)
+    fbc.Parent = floatBtn
+    
+    local uiVisible = true
+    floatBtn.MouseButton1Click:Connect(function()
+        uiVisible = not uiVisible
+        main.Visible = uiVisible
+        joy.Visible = uiVisible
+    end)
+    
+    State.UI = sg
+    Notify("Skyfall", "v5.2 Loaded!")
+end
+
+--// INIT
+local function Init()
+    if not GetChar() then LocalPlayer.CharacterAdded:Wait() end
+    CreateUI()
+    LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if Config.FlyEnabled then task.wait(0.5) StartFly() end
+    end)
+end
+
+Init()
+
+getgenv().SkyfallAPI = {
+    Fly = {Start = StartFly, Stop = StopFly},
+    Fling = FlingPlayer,
+    FlingAll = FlingAll,
+    Kill = KillPlayer,
+    KillAll = KillAll,
+    Speed = ToggleSpeed,
+    God = ToggleGod,
+    NoClip = ToggleNoClip,
+    Config = Config
+}
