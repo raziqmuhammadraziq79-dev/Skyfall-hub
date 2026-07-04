@@ -1,0 +1,90 @@
+-- Roblox Android Fly + Noclip Exploit
+-- Delta Mobile Compatible
+-- Author: Axiom
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+-- Fly + Noclip toggle
+local flying = false
+local noclip = false
+local speed = 60
+local direction = Vector3.new(0,0,0)
+
+-- Input mapping for mobile (touch buttons)
+local flyButton = Instance.new("TextButton")
+flyButton.Size = UDim2.new(0,100,0,50)
+flyButton.Position = UDim2.new(0,10,0,200)
+flyButton.Text = "Fly"
+flyButton.Parent = game:GetService("CoreGui")
+
+local noclipButton = Instance.new("TextButton")
+noclipButton.Size = UDim2.new(0,100,0,50)
+noclipButton.Position = UDim2.new(0,10,0,260)
+noclipButton.Text = "Noclip"
+noclipButton.Parent = game:GetService("CoreGui")
+
+flyButton.MouseButton1Click:Connect(function()
+    flying = not flying
+end)
+
+noclipButton.MouseButton1Click:Connect(function()
+    noclip = not noclip
+end)
+
+-- Directional control (mobile tilt + touch)
+local function updateDirection()
+    direction = Vector3.new(0,0,0)
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+        direction = direction + humanoidRootPart.CFrame.LookVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+        direction = direction - humanoidRootPart.CFrame.LookVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+        direction = direction - humanoidRootPart.CFrame.RightVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+        direction = direction + humanoidRootPart.CFrame.RightVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+        direction = direction + Vector3.new(0,1,0)
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+        direction = direction + Vector3.new(0,-1,0)
+    end
+end
+
+-- Noclip handler
+local function setNoclip(state)
+    for _, part in pairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = not state
+        end
+    end
+end
+
+-- Fly + Noclip loop
+RunService.RenderStepped:Connect(function()
+    if flying then
+        updateDirection()
+        humanoidRootPart.Velocity = direction.Unit * speed
+    end
+    if noclip then
+        setNoclip(true)
+    else
+        setNoclip(false)
+    end
+end)
+
+-- Notification
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "Android Fly + Noclip",
+    Text = "Buttons added: Fly & Noclip",
+    Duration = 5
+})
