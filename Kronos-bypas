@@ -1,0 +1,115 @@
+-- KRONOS UNLOCKED v3.0
+-- Full Bypass | No Key | No Discord | Auto Load Game
+
+-- ============================================
+-- KONFIGURASI GAME
+-- ============================================
+local Games = {
+    [9073513091] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/AnimeApocalypse.lua",
+    [3647333358] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/Evade.lua",
+    [9910245722] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/IronSoulDungeon.lua",
+    [10230942274] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/AbilityArena.lua",
+    [8356066619] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/AnimeSquadron.lua",
+    [9965411707] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/NoobIncremental.lua",
+    [1268927906] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/MuscleLegends.lua",
+    [1176784616] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/TowerDefenseSimulator.lua",
+    [1235188606] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/DragonAdventures.lua",
+    [7546582051] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/DungeonHeroes.lua",
+    [4568630521] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/HeroesBattlegrounds.lua",
+    [9382839773] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/LineagePiece.lua",
+    [10178802449] = "https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Scripts/MineClick.lua",
+}
+
+-- ============================================
+-- BYPASS ENGINE
+-- ============================================
+local function bypassAll()
+    -- Bypass Key
+    getgenv().checkKey = function() return true end
+    getgenv().validateKey = function() return true end
+    getgenv().isKeyValid = function() return true end
+    getgenv().key = "bypassed"
+    getgenv().KEY = "bypassed"
+    getgenv()._key = "bypassed"
+    
+    -- Bypass Discord & Request
+    getgenv().setclipboard = function() end
+    getgenv().toclipboard = function() end
+    getgenv().request = function() return { StatusCode = 200, Body = '{"code":"bypassed"}' } end
+    getgenv().http_request = function() return { StatusCode = 200, Body = '{"code":"bypassed"}' } end
+    getgenv().syn = { request = function() return { StatusCode = 200, Body = '{"code":"bypassed"}' } end }
+    getgenv().http = { request = function() return { StatusCode = 200, Body = '{"code":"bypassed"}' } end }
+    
+    -- Bypass Loader Key Check
+    pcall(function()
+        local old = getrawmetatable and getrawmetatable(game) or nil
+        if old then
+            local oldIndex = old.__index
+            setreadonly(old, false)
+            old.__index = newcclosure(function(self, key)
+                if key == "Key" or key == "key" or key == "_key" then
+                    return "bypassed"
+                end
+                return oldIndex(self, key)
+            end)
+            setreadonly(old, true)
+        end
+    end)
+    
+    -- Destroy Key UI jika muncul
+    pcall(function()
+        for _, gui in pairs(game:GetService("CoreGui"):GetChildren()) do
+            if gui.Name:lower():find("kronos") or gui.Name:lower():find("key") or gui.Name:lower():find("validate") then
+                gui:Destroy()
+            end
+        end
+        for _, gui in pairs(game:GetService("Players").LocalPlayer.PlayerGui:GetChildren()) do
+            if gui.Name:lower():find("kronos") or gui.Name:lower():find("key") or gui.Name:lower():find("validate") then
+                gui:Destroy()
+            end
+        end
+    end)
+end
+
+-- ============================================
+-- LOAD GAME SCRIPT
+-- ============================================
+local function loadGameScript()
+    local gameId = game.GameId
+    local scriptURL = Games[gameId]
+    
+    if scriptURL then
+        print("[KRONOS] Loading script for: " .. gameId)
+        local success, err = pcall(function()
+            loadstring(game:HttpGet(scriptURL))()
+        end)
+        if success then
+            print("[KRONOS] ✅ Script loaded successfully!")
+            return true
+        else
+            warn("[KRONOS] ❌ Error: " .. tostring(err))
+        end
+    else
+        warn("[KRONOS] ❌ Game not supported: " .. gameId)
+        -- Coba fallback ke loader utama
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/Nanana291/Kronos/refs/heads/main/Loader.lua"))()
+        end)
+    end
+    return false
+end
+
+-- ============================================
+-- EKSEKUSI
+-- ============================================
+bypassAll()
+local loaded = loadGameScript()
+
+if not loaded then
+    print("[KRONOS] ❌ Gagal load script. Coba manual:")
+    print("[KRONOS] 1. Cari script untuk game ID: " .. game.GameId)
+    print("[KRONOS] 2. Tambahkan ke daftar Games di script ini")
+    print("[KRONOS] 3. Upload ulang ke GitHub")
+end
+
+print("[KRONOS UNLOCKED v3.0] ✅ Done!")
