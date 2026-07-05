@@ -1,16 +1,59 @@
--- THESKYFALL-HUB v30.1 KAVO EDITION
--- Full All-in-One | Delta & Fluxus Compatible | Follow 25 Studs
+-- THESKYFALL-HUB v30.2 ULTIMATE EDITION
+-- Draggable + Hide Key + Mobile Support + All Bugs Fixed
 
 local success, Library = pcall(function()
     return loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
 end)
 
 if not success then
-    warn("[SKYFALL] Failed to load Kavo UI! Check internet.")
+    warn("[SKYFALL] Failed to load Kavo UI!")
     return
 end
 
-local Window = Library.CreateLib("THESKYFALL-HUB v30.1", "DarkTheme")
+local Window = Library.CreateLib("THESKYFALL-HUB v30.2", "DarkTheme")
+
+-- DRAGGABLE FIX
+pcall(function()
+    local MainFrame = nil
+    for _,v in ipairs(game:GetService("CoreGui"):GetDescendants()) do
+        if v:IsA("Frame") and v.Name == "Main" then MainFrame = v; break end
+    end
+    if MainFrame then
+        local Dragging, DragInput, MousePos, FramePos = false, nil, nil, nil
+        MainFrame.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                Dragging = true
+                MousePos = input.Position
+                FramePos = MainFrame.Position
+                input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then Dragging = false end end)
+            end
+        end)
+        MainFrame.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then DragInput = input end
+        end)
+        game:GetService("UserInputService").InputChanged:Connect(function(input)
+            if input == DragInput and Dragging then
+                local Delta = input.Position - MousePos
+                MainFrame.Position = UDim2.new(FramePos.X.Scale, FramePos.X.Offset + Delta.X, FramePos.Y.Scale, FramePos.Y.Offset + Delta.Y)
+            end
+        end)
+    end
+end)
+
+-- HIDE KEY (RightShift)
+local Hidden = false
+game:GetService("UserInputService").InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        Hidden = not Hidden
+        pcall(function()
+            for _,v in ipairs(game:GetService("CoreGui"):GetDescendants()) do
+                if v:IsA("Frame") and v.Name == "Main" then v.Visible = not Hidden end
+            end
+        end)
+        Library:Notify(Hidden and "GUI Hidden (Press RightShift)" or "GUI Shown", 2)
+    end
+end)
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -209,7 +252,7 @@ FollowSec:NewButton("🛑 STOP FOLLOWING", "", function()
     Library:Notify("Stopped Following", 2)
 end)
 
-FollowSec:NewToggle("🎭 Troll Hover (Stuck di Udara)", "", function(s)
+FollowSec:NewToggle("🎭 Troll Hover", "", function(s)
     if s then
         SB("TrollHover", Enum.RenderPriority.Character.Value+1, function()
             if Hum and Hum.FloorMaterial == Enum.Material.Air then
@@ -220,6 +263,54 @@ FollowSec:NewToggle("🎭 Troll Hover (Stuck di Udara)", "", function(s)
             end
         end)
     else SU("TrollHover") end
+end)
+
+-- COMBAT TAB (NEW!)
+local CombatTab = Window:NewTab("Combat")
+local CombatSec = CombatTab:NewSection("Aimbot & Kill Aura")
+
+CombatSec:NewToggle("🎯 Silent Aimbot (Auto-Aim)", "", function(s)
+    if s then
+        SB("Aimbot", Enum.RenderPriority.Camera.Value+1, function()
+            local closest, minDist = nil, math.huge
+            for _,p in ipairs(Players:GetPlayers()) do
+                if p ~= LP and p.Character and p.Character:FindFirstChild("Head") then
+                    local head = p.Character.Head
+                    local dist = (head.Position - RP.Position).Magnitude
+                    if dist < minDist and dist < 100 then minDist = dist; closest = head end
+                end
+            end
+            if closest then Cam.CFrame = CFrame.lookAt(Cam.CFrame.Position, closest.Position) end
+        end)
+    else SU("Aimbot") end
+end)
+
+CombatSec:NewToggle("💀 Kill Aura (Auto-Kill Nearby)", "", function(s)
+    if s then
+        SB("KillAura", Enum.RenderPriority.Character.Value+2, function()
+            for _,p in ipairs(Players:GetPlayers()) do
+                if p ~= LP and p.Character and p.Character:FindFirstChild("Humanoid") then
+                    if (p.Character.HumanoidRootPart.Position - RP.Position).Magnitude < 15 then
+                        pcall(function() p.Character.Humanoid.Health = 0 end)
+                    end
+                end
+            end
+        end)
+    else SU("KillAura") end
+end)
+
+CombatSec:NewToggle("🛡️ Anti-Stun (Anti-Ragdoll)", "", function(s)
+    if s then
+        SB("AntiStun", Enum.RenderPriority.Character.Value+3, function()
+            local st = Hum:GetState()
+            if st == Enum.HumanoidStateType.Physics or st == Enum.HumanoidStateType.Ragdoll then
+                pcall(function() Hum:ChangeState(Enum.HumanoidStateType.GettingUp); RP.AssemblyLinearVelocity = Vector3.new(0,60,0) end)
+            end
+            for _,obj in ipairs(Char:GetDescendants()) do
+                if obj:IsA("BodyVelocity") or obj:IsA("BodyGyro") then pcall(function() obj:Destroy() end) end
+            end
+        end)
+    else SU("AntiStun") end
 end)
 
 -- REPORT TAB
@@ -298,7 +389,7 @@ KillerSec:NewToggle("👁️ Player ESP (Names + Distance)", "", function(s)
     end
 end)
 
-KillerSec:NewToggle("🎥 Killer POV (ESC to exit)", "", function(s)
+KillerSec:NewToggle("🎥 Killer POV", "", function(s)
     if s then
         local k = GetKiller()
         if k and k:FindFirstChild("Humanoid") then Cam.CameraSubject = k.Humanoid
@@ -306,7 +397,7 @@ KillerSec:NewToggle("🎥 Killer POV (ESC to exit)", "", function(s)
     else Cam.CameraSubject = Hum end
 end)
 
-KillerSec:NewToggle("🎯 Expand Hitbox (10x All Players)", "", function(s)
+KillerSec:NewToggle("🎯 Expand Hitbox (10x)", "", function(s)
     if s then
         SB("Hitbox", Enum.RenderPriority.Character.Value+1, function()
             for _,p in ipairs(Players:GetPlayers()) do
@@ -325,21 +416,11 @@ KillerSec:NewToggle("🎯 Expand Hitbox (10x All Players)", "", function(s)
     end
 end)
 
-KillerSec:NewButton("💀 Kill All Players", "", function()
-    local c = 0
-    for _,p in ipairs(Players:GetPlayers()) do
-        if p ~= LP and p.Character and p.Character:FindFirstChild("Humanoid") then
-            pcall(function() p.Character.Humanoid.Health = 0; c = c + 1 end)
-        end
-    end
-    Library:Notify("Killed "..c.." players", 3)
-end)
-
 -- RARE TAB
 local RareTab = Window:NewTab("Rare")
-local RareSec = RareTab:NewSection("Rare & Unique Features")
+local RareSec = RareTab:NewSection("Rare Features")
 
-RareSec:NewToggle("🤺 Auto-Parry (Anti-Attack Dodge)", "", function(s)
+RareSec:NewToggle("🤺 Auto-Parry", "", function(s)
     if s then
         SB("AutoParry", Enum.RenderPriority.Character.Value+2, function()
             for _,p in ipairs(Players:GetPlayers()) do
@@ -354,41 +435,15 @@ RareSec:NewToggle("🤺 Auto-Parry (Anti-Attack Dodge)", "", function(s)
     else SU("AutoParry") end
 end)
 
-RareSec:NewToggle("🛡️ Anti-Grab (Anti-Stun Lock)", "", function(s)
-    if s then
-        SB("AntiGrab", Enum.RenderPriority.Character.Value+3, function()
-            local st = Hum:GetState()
-            if st == Enum.HumanoidStateType.Physics or st == Enum.HumanoidStateType.Ragdoll then
-                pcall(function() Hum:ChangeState(Enum.HumanoidStateType.GettingUp); RP.AssemblyLinearVelocity = Vector3.new(0,60,0) end)
-            end
-            for _,obj in ipairs(Char:GetDescendants()) do
-                if obj:IsA("BodyVelocity") or obj:IsA("BodyGyro") then pcall(function() obj:Destroy() end) end
-            end
-        end)
-    else SU("AntiGrab") end
-end)
-
-RareSec:NewButton("⏪ Time Rewind (Back 5s)", "", function()
+RareSec:NewButton("⏪ Time Rewind", "", function()
     if RP then RP.CFrame = LastSafe end
     Library:Notify("Returned to previous position!", 2)
 end)
 
-RareSec:NewButton("💀 Fake Death (Revive 3s)", "", function()
+RareSec:NewButton("💀 Fake Death", "", function()
     pcall(function() Hum.Health = 0 end)
     task.delay(3, function() pcall(function() Hum.Health = Hum.MaxHealth end) end)
     Library:Notify("Playing dead for 3 seconds...", 3)
-end)
-
-RareSec:NewButton("🧲 Gravity Gun (Pull Objects 5s)", "", function()
-    SB("GravGun", Enum.RenderPriority.Character.Value+1, function()
-        for _,o in ipairs(WS:GetDescendants()) do
-            if o:IsA("BasePart") and not o:IsDescendantOf(Char) and not o.Anchored and (o.Position - RP.Position).Magnitude < 40 then
-                pcall(function() o.AssemblyLinearVelocity = (RP.Position - o.Position).Unit * 60 end)
-            end
-        end
-    end)
-    task.delay(5, function() SU("GravGun") end)
-    Library:Notify("Gravity Gun Active 5s!", 5)
 end)
 
 RareSec:NewToggle("👻 True Invisible", "", function(s)
@@ -406,7 +461,7 @@ end)
 local FPSTab = Window:NewTab("FPS")
 local FPSSec = FPSTab:NewSection("Performance Boost")
 
-FPSSec:NewToggle("🔥 Insane FPS Boost (100+)", "", function(s)
+FPSSec:NewToggle("🔥 Insane FPS Boost", "", function(s)
     if s then
         pcall(function() setfpscap(0) end)
         SB("InsaneFPS", Enum.RenderPriority.Camera.Value-1, function()
@@ -450,5 +505,5 @@ LP.CharacterAdded:Connect(function(char)
     task.wait(0.5); ApplyStats()
 end)
 
-Library:Notify("THESKYFALL-HUB v30.1 Loaded! Follow: 25 Studs", 5)
-print("[SKYFALL v30.1] LOADED | Kavo Edition | All Features Working")
+Library:Notify("THESKYFALL-HUB v30.2 Loaded! | RightShift = Hide | Draggable ON", 5)
+print("[SKYFALL v30.2] LOADED | Ultimate Edition | All Bugs Fixed")
