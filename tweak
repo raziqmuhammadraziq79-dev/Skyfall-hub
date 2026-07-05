@@ -1,0 +1,443 @@
+-- THESKYFALL-HUB v14.0 APEX [CLEAN UI EDITION]
+-- Base: Premium Dark Clean UI
+-- Author: TEN WEAK for VORD
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Lighting = game:GetService("Lighting")
+
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+local Camera = Workspace.CurrentCamera
+
+-- Configuration (APEX THEME)
+local CFG = {
+    Title = "THESKYFALL",
+    Version = "v14.0",
+    Accent = Color3.fromRGB(88, 101, 242), -- Premium Discord-like Blue/Purple
+    BG = Color3.fromRGB(17, 18, 21),      -- Deep Dark
+    BG2 = Color3.fromRGB(24, 25, 29),     -- Sidebar Dark
+    BG3 = Color3.fromRGB(32, 34, 39),     -- Element Dark
+    Text = Color3.fromRGB(219, 222, 225),
+    TextDim = Color3.fromRGB(142, 146, 151)
+}
+
+-- Utility
+local function New(C, P)
+    local O = Instance.new(C)
+    for i,v in pairs(P) do if i~="Parent" then O[i]=v end end
+    if P.Parent then O.Parent=P.Parent end
+    return O
+end
+
+local function AddLog(msg)
+    print("[SKYFALL LOG] " .. os.date("%H:%M:%S") .. " | " .. msg)
+end
+
+-- Main Screen
+local Screen = New("ScreenGui", {Name="TheSkyfallApex", ResetOnSpawn=false, IgnoreGuiInset=true, Parent=CoreGui})
+
+-- Floating Toggle Button
+local FloatBtn = New("ImageButton", {
+    Name="FloatBtn", Size=UDim2.new(0,45,0,45), Position=UDim2.new(0.02,0,0.5,-22),
+    BackgroundColor3=CFG.BG2, BorderSizePixel=0, Visible=false, Parent=Screen,
+    Image="rbxassetid://6031280882", ImageColor3=CFG.Accent, ScaleType=Enum.ScaleType.Fit
+})
+New("UICorner", {CornerRadius=UDim.new(0,10), Parent=FloatBtn})
+New("UIStroke", {Color=CFG.Accent, Thickness=2, Parent=FloatBtn})
+
+-- Main Container (CLEAN BASE)
+local Main = New("Frame", {
+    Name="Main", Size=UDim2.new(0, 420, 0, 280), 
+    Position=UDim2.new(0.5, -210, 0.5, -140),
+    BackgroundColor3=CFG.BG, BorderSizePixel=0, ClipsDescendants=true, Parent=Screen
+})
+New("UICorner", {CornerRadius=UDim.new(0,8), Parent=Main})
+
+-- Header (Draggable, Minimalist)
+local Header = New("Frame", {Name="Header", Size=UDim2.new(1,0,0,30), BackgroundTransparency=1, Parent=Main})
+New("TextLabel", {
+    Size=UDim2.new(1,-80,1,0), Position=UDim2.new(0,12,0,0), BackgroundTransparency=1,
+    Text=CFG.Title.." <font color='#"..CFG.Accent:ToHex().."'>"..CFG.Version.."</font>", 
+    RichText = true,
+    TextColor3=CFG.Text, TextSize=13, Font=Enum.Font.GothamBold,
+    TextXAlignment=Enum.TextXAlignment.Left, Parent=Header
+})
+
+local HideBtn = New("TextButton", {
+    Size=UDim2.new(0,30,1,0), Position=UDim2.new(1,-30,0,0), BackgroundTransparency=1,
+    Text="—", TextColor3=CFG.TextDim, TextSize=16, Font=Enum.Font.GothamBold, Parent=Header
+})
+
+local CloseBtn = New("TextButton", {
+    Size=UDim2.new(0,30,1,0), Position=UDim2.new(1,-60,0,0), BackgroundTransparency=1,
+    Text="X", TextColor3=CFG.TextDim, TextSize=14, Font=Enum.Font.GothamBold, Parent=Header
+})
+
+-- Sidebar (Clean, Left Aligned)
+local Sidebar = New("Frame", {
+    Name="Sidebar", Size=UDim2.new(0,100,1,-30), Position=UDim2.new(0,0,0,30),
+    BackgroundColor3=CFG.BG2, BorderSizePixel=0, Parent=Main
+})
+New("UIListLayout", {Padding=UDim.new(0,2), SortOrder=Enum.SortOrder.LayoutOrder, Parent=Sidebar})
+New("UIPadding", {PaddingTop=UDim.new(0,10), PaddingLeft=UDim.new(0,8), PaddingRight=UDim.new(0,8), Parent=Sidebar})
+
+-- Content Area (Spacious)
+local Content = New("Frame", {
+    Name="Content", Size=UDim2.new(1,-100,1,-30), Position=UDim2.new(0,100,0,30),
+    BackgroundTransparency=1, Parent=Main
+})
+
+-- Pages with Dynamic CanvasSize
+local Pages = {}
+local function CreateTab(Name)
+    local Btn = New("TextButton", {
+        Size=UDim2.new(1,0,0,28), BackgroundColor3=Color3.fromRGB(24,25,29),
+        Text="  " .. Name, TextColor3=CFG.TextDim, TextSize=12, Font=Enum.Font.GothamMedium,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=Sidebar
+    })
+    New("UICorner", {CornerRadius=UDim.new(0,4), Parent=Btn})
+    
+    local Page = New("ScrollingFrame", {
+        Name=Name, Size=UDim2.new(1,-10,1,-10), Position=UDim2.new(0,5,0,5),
+        BackgroundTransparency=1,
+        CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ScrollBarThickness=2, ScrollBarImageColor3=CFG.Accent, Visible=false, Parent=Content
+    })
+    New("UIListLayout", {Padding=UDim.new(0,6), SortOrder=Enum.SortOrder.LayoutOrder, Parent=Page})
+    Pages[Name] = Page
+    
+    Btn.MouseButton1Click:Connect(function()
+        for _,p in pairs(Pages) do p.Visible=false end
+        Page.Visible=true
+        for _,c in ipairs(Sidebar:GetChildren()) do
+            if c:IsA("TextButton") then 
+                TweenService:Create(c, TweenInfo.new(0.15), {BackgroundColor3=CFG.BG2, TextColor3=CFG.TextDim}):Play()
+            end
+        end
+        TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundColor3=CFG.BG3, TextColor3=CFG.Text}):Play()
+    end)
+    return Page
+end
+
+-- Components (Premium Clean)
+local function Toggle(Page, Name, Callback)
+    local Box = New("Frame", {Size=UDim2.new(1,0,0,32), BackgroundColor3=CFG.BG3, BorderSizePixel=0, Parent=Page})
+    New("UICorner", {CornerRadius=UDim.new(0,4), Parent=Box})
+    New("TextLabel", {
+        Size=UDim2.new(1,-50,1,0), Position=UDim2.new(0,10,0,0), BackgroundTransparency=1,
+        Text=Name, TextColor3=CFG.Text, TextSize=12, Font=Enum.Font.GothamMedium,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=Box
+    })
+    local Btn = New("TextButton", {
+        Size=UDim2.new(0,40,0,20), Position=UDim2.new(1,-45,0.5,-10),
+        BackgroundColor3=Color3.fromRGB(50,52,58), Text="OFF", TextColor3=CFG.TextDim,
+        TextSize=10, Font=Enum.Font.GothamBold, Parent=Box
+    })
+    New("UICorner", {CornerRadius=UDim.new(1,0), Parent=Btn})
+    
+    local S=false
+    Btn.MouseButton1Click:Connect(function()
+        S=not S; Btn.Text=S and "ON" or "OFF"
+        TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundColor3=S and CFG.Accent or Color3.fromRGB(50,52,58), TextColor3=S and Color3.new(1,1,1) or CFG.TextDim}):Play()
+        Callback(S)
+    end)
+end
+
+local function Slider(Page, Name, Min, Max, Def, Callback)
+    local Box = New("Frame", {Size=UDim2.new(1,0,0,45), BackgroundColor3=CFG.BG3, BorderSizePixel=0, Parent=Page})
+    New("UICorner", {CornerRadius=UDim.new(0,4), Parent=Box})
+    local Label = New("TextLabel", {
+        Size=UDim2.new(1,-20,0,20), Position=UDim2.new(0,10,0,5), BackgroundTransparency=1,
+        Text=Name..": "..Def, TextColor3=CFG.Text, TextSize=11, Font=Enum.Font.GothamMedium,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=Box
+    })
+    local Track = New("Frame", {Size=UDim2.new(1,-20,0,4), Position=UDim2.new(0,10,1,-12), BackgroundColor3=Color3.fromRGB(40,42,48), Parent=Box})
+    New("UICorner", {CornerRadius=UDim.new(1,0), Parent=Track})
+    local Fill = New("Frame", {Size=UDim2.new((Def-Min)/(Max-Min),0,1,0), BackgroundColor3=CFG.Accent, Parent=Track})
+    New("UICorner", {CornerRadius=UDim.new(1,0), Parent=Fill})
+    
+    local Drag=false
+    local function Update(I)
+        local Pct=math.clamp((I.Position.X-Track.AbsolutePosition.X)/Track.AbsoluteSize.X,0,1)
+        local V=math.floor(Min+(Max-Min)*Pct)
+        Fill.Size=UDim2.new(Pct,0,1,0)
+        Label.Text=Name..": "..V; Callback(V)
+    end
+    
+    Track.InputBegan:Connect(function(I)
+        if I.UserInputType==Enum.UserInputType.Touch or I.UserInputType==Enum.UserInputType.MouseButton1 then
+            Drag=true; Update(I)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(I)
+        if Drag and (I.UserInputType==Enum.UserInputType.Touch or I.UserInputType==Enum.UserInputType.MouseMovement) then Update(I) end
+    end)
+    UserInputService.InputEnded:Connect(function(I) 
+        if I.UserInputType==Enum.UserInputType.Touch or I.UserInputType==Enum.UserInputType.MouseButton1 then Drag=false end 
+    end)
+end
+
+local function ActionBtn(Page, Name, Color, Callback)
+    local Btn = New("TextButton", {
+        Size=UDim2.new(1,0,0,30), BackgroundColor3=Color or CFG.Accent,
+        Text=Name, TextColor3=Color3.new(1,1,1), TextSize=12, Font=Enum.Font.GothamBold, Parent=Page
+    })
+    New("UICorner", {CornerRadius=UDim.new(0,4), Parent=Btn})
+    Btn.MouseButton1Click:Connect(Callback)
+end
+
+-- PLAYER SELECTOR (Clean Dropdown Style)
+local SelectedPlr = nil
+local PlayerListFrame = nil
+
+local function UpdatePlayerList(filterText)
+    if not PlayerListFrame then return end
+    for _,child in ipairs(PlayerListFrame:GetChildren()) do
+        if child:IsA("GuiObject") and child.Name ~= "UIListLayout" then child:Destroy() end
+    end
+    
+    for _,plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local name = plr.Name
+            if not filterText or string.find(string.lower(name), string.lower(filterText)) then
+                local B = New("TextButton", {
+                    Size=UDim2.new(1,0,0,24), BackgroundColor3=CFG.BG,
+                    Text="  " .. name, TextColor3=SelectedPlr == plr and CFG.Accent or CFG.Text, 
+                    TextSize=11, Font=Enum.Font.GothamMedium, TextXAlignment=Enum.TextXAlignment.Left, Parent=PlayerListFrame
+                })
+                New("UICorner", {CornerRadius=UDim.new(0,3), Parent=B})
+                B.MouseButton1Click:Connect(function()
+                    SelectedPlr = plr
+                    UpdatePlayerList(filterText)
+                    AddLog("Target locked: " .. plr.Name)
+                end)
+            end
+        end
+    end
+end
+
+local function CreatePlayerSelector(Page)
+    local Box = New("Frame", {Size=UDim2.new(1,0,0,120), BackgroundColor3=CFG.BG3, BorderSizePixel=0, Parent=Page})
+    New("UICorner", {CornerRadius=UDim.new(0,4), Parent=Box})
+    New("TextLabel", {Size=UDim2.new(1,-10,0,20), Position=UDim2.new(0,10,0,5), BackgroundTransparency=1, Text="TARGET SELECTOR", TextColor3=CFG.Accent, TextSize=11, Font=Enum.Font.GothamBold, TextXAlignment=Enum.TextXAlignment.Left, Parent=Box})
+    
+    local SearchBox = New("TextBox", {
+        Size=UDim2.new(1,-20,0,22), Position=UDim2.new(0,10,0,25),
+        BackgroundColor3=CFG.BG, BorderSizePixel=0,
+        PlaceholderText="Search...", PlaceholderColor3=CFG.TextDim,
+        Text="", TextColor3=CFG.Text, TextSize=11, Font=Enum.Font.GothamMedium, Parent=Box
+    })
+    New("UICorner", {CornerRadius=UDim.new(0,3), Parent=SearchBox})
+    SearchBox:GetPropertyChangedSignal("Text"):Connect(function() UpdatePlayerList(SearchBox.Text) end)
+    
+    PlayerListFrame = New("ScrollingFrame", {
+        Size=UDim2.new(1,-20,0,60), Position=UDim2.new(0,10,0,52),
+        BackgroundTransparency=1, CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ScrollBarThickness=2, Parent=Box
+    })
+    New("UIListLayout", {Padding=UDim.new(0,2), Parent=PlayerListFrame})
+    
+    UpdatePlayerList("")
+    Players.PlayerAdded:Connect(function() wait(0.5); UpdatePlayerList(SearchBox.Text) end)
+    Players.PlayerRemoving:Connect(function() wait(0.5); UpdatePlayerList(SearchBox.Text) end)
+end
+
+-- ================= CREATE TABS =================
+local PgMove = CreateTab("Movement")
+local PgCombat = CreateTab("Combat")
+local PgVisuals = CreateTab("Visuals")
+local PgWorld = CreateTab("World")
+local PgMisc = CreateTab("Misc")
+local PgExploit = CreateTab("Exploit")
+local PgSettings = CreateTab("Settings")
+
+Pages["Movement"].Visible=true
+for _,c in ipairs(Sidebar:GetChildren()) do
+    if c:IsA("TextButton") and c.Text:find("Movement") then 
+        c.BackgroundColor3 = CFG.BG3
+        c.TextColor3 = CFG.Text
+    end
+end
+
+-- ================= MOVEMENT =================
+_G.FlySpd = 80
+local BV = nil
+
+Toggle(PgMove, "Fly", function(S)
+    if S then
+        Humanoid.PlatformStand=true
+        BV = New("BodyVelocity", {Velocity=Vector3.new(0,0,0), MaxForce=Vector3.new(math.huge,math.huge,math.huge), P=5000, Parent=RootPart})
+    else
+        Humanoid.PlatformStand=false
+        if BV then BV:Destroy(); BV=nil end
+        RootPart.Velocity=Vector3.new(0,0,0)
+    end
+end)
+Slider(PgMove, "Fly Speed", 10, 300, 80, function(V) _G.FlySpd=V end)
+Toggle(PgMove, "No Clip", function(S)
+    for _,P in pairs(Character:GetDescendants()) do if P:IsA("BasePart") then P.CanCollide=not S end end
+end)
+Slider(PgMove, "WalkSpeed", 16, 500, 16, function(V) Humanoid.WalkSpeed=V end)
+Slider(PgMove, "JumpPower", 50, 1000, 50, function(V) Humanoid.JumpPower=V; Humanoid.UseJumpPower=true end)
+Toggle(PgMove, "Infinite Jump", function(S)
+    if S then Humanoid.StateChanged:Connect(function(_,n) if n==Enum.HumanoidStateType.Freefall then Humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end end) end
+end)
+
+-- ================= COMBAT =================
+CreatePlayerSelector(PgCombat)
+
+ActionBtn(PgCombat, "FAST EXTREME BAN KICK", Color3.fromRGB(237, 66, 69), function()
+    if SelectedPlr and SelectedPlr.Character then
+        AddLog("Ban Kick: "..SelectedPlr.Name)
+        pcall(function() SelectedPlr.Character:BreakJoints() end)
+        task.spawn(function()
+            for i=1,200 do
+                pcall(function()
+                    local rem = Workspace:FindFirstChild("Damage") or Workspace:FindFirstChild("Hit")
+                    if rem and rem:IsA("RemoteEvent") then rem:FireServer(SelectedPlr.Character) end
+                end)
+                wait(0.001)
+            end
+        end)
+    end
+end)
+
+ActionBtn(PgCombat, "Fling Target", Color3.fromRGB(250, 166, 26), function()
+    if SelectedPlr and SelectedPlr.Character and SelectedPlr.Character:FindFirstChild("HumanoidRootPart") then
+        local T=SelectedPlr.Character.HumanoidRootPart
+        local F=New("BodyVelocity",{Velocity=Vector3.new(0,800,0),MaxForce=Vector3.new(math.huge,math.huge,math.huge),P=50000,Parent=T})
+        task.spawn(function() wait(0.2); F.Velocity=Vector3.new(math.random(-800,800),800,math.random(-800,800)); wait(3); F:Destroy() end)
+    end
+end)
+
+ActionBtn(PgCombat, "Teleport To", CFG.Accent, function()
+    if SelectedPlr and SelectedPlr.Character and SelectedPlr.Character:FindFirstChild("HumanoidRootPart") then
+        RootPart.CFrame = SelectedPlr.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,3)
+    end
+end)
+
+ActionBtn(PgCombat, "Kill Aura", Color3.fromRGB(237, 66, 69), function()
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=LocalPlayer and p.Character then pcall(function() p.Character:BreakJoints() end) end
+    end
+end)
+
+-- ================= VISUALS =================
+Toggle(PgVisuals, "Chams ESP", function(S)
+    if S then for _,p in pairs(Players:GetPlayers()) do if p~=LocalPlayer and p.Character then New("Highlight",{FillColor=CFG.Accent,OutlineColor=Color3.new(0,0,0),FillTransparency=0.6,Parent=p.Character}) end end
+    else for _,p in pairs(Players:GetPlayers()) do if p.Character then local h=p.Character:FindFirstChildOfClass("Highlight"); if h then h:Destroy() end end end end
+end)
+Toggle(PgVisuals, "Fullbright", function(S) if S then Lighting.Brightness=2; Lighting.ClockTime=14; Lighting.FogEnd=100000 else Lighting.Brightness=1; Lighting.ClockTime=17.5; Lighting.FogEnd=1000 end end)
+
+-- ================= EXPLOIT =================
+ActionBtn(PgExploit, "Dump Remotes", CFG.Accent, function()
+    local found={}
+    for _,c in ipairs(ReplicatedStorage:GetDescendants()) do
+        if c:IsA("RemoteEvent") or c:IsA("RemoteFunction") then table.insert(found,c:GetFullName()) end
+    end
+    setclipboard(table.concat(found,"\n"))
+    AddLog(#found.." remotes dumped to clipboard")
+end)
+
+Toggle(PgExploit, "Anti-Cheat Bypass", function(S)
+    if S then
+        for _,script in ipairs(game:GetDescendants()) do
+            if script:IsA("LocalScript") and (string.find(script.Name, "Anti") or string.find(script.Name, "Che")) then
+                pcall(function() script.Disabled = true end)
+            end
+        end
+    end
+end)
+
+-- ================= SILENT & FAKE CHAT (Moved to Combat for clean sidebar, or keep separate if preferred. Let's keep it in Combat to save space) =================
+ActionBtn(PgCombat, "SILENT PHANTOM (1000x)", Color3.fromRGB(114, 137, 218), function()
+    if SelectedPlr and SelectedPlr.Character then
+        task.spawn(function()
+            for i=1,1000 do
+                pcall(function()
+                    local rem = Workspace:FindFirstChild("Report") or Workspace:FindFirstChild("Moderation") or ReplicatedStorage:FindFirstChild("Report")
+                    if rem and rem:IsA("RemoteEvent") then rem:FireServer(SelectedPlr.UserId, "silent_violation") end
+                end)
+                wait(0.0005)
+            end
+        end)
+        pcall(function() SelectedPlr.Character:BreakJoints() end)
+    end
+end)
+
+-- ================= SETTINGS =================
+local function ColorPickerButton(Page, Name, ColorVal)
+    local Btn = New("TextButton", {Size=UDim2.new(0.2,-4,0,30), BackgroundColor3=ColorVal, Text="", Parent=Page})
+    New("UICorner", {CornerRadius=UDim.new(0,4), Parent=Btn})
+    Btn.MouseButton1Click:Connect(function()
+        CFG.Accent=ColorVal
+        AddLog("Theme color updated")
+    end)
+end
+
+local ColorContainer = New("Frame", {Size=UDim2.new(1,0,0,30), BackgroundTransparency=1, Parent=PgSettings})
+New("UIListLayout", {FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,5), Parent=ColorContainer})
+ColorPickerButton(ColorContainer, "Blue", Color3.fromRGB(88, 101, 242))
+ColorPickerButton(ColorContainer, "Red", Color3.fromRGB(237, 66, 69))
+ColorPickerButton(ColorContainer, "Green", Color3.fromRGB(87, 242, 135))
+ColorPickerButton(ColorContainer, "Yellow", Color3.fromRGB(254, 231, 92))
+
+Slider(PgSettings, "GUI Scale %", 70, 150, 100, function(V)
+    local scale = V / 100
+    Main.Size = UDim2.new(0, 420 * scale, 0, 280 * scale)
+    Main.Position = UDim2.new(0.5, -(210 * scale), 0.5, -(140 * scale))
+end)
+
+-- FLY LOOP
+RunService.RenderStepped:Connect(function(DT)
+    if BV and Humanoid.PlatformStand then
+        local Move=Vector3.new(0,0,0)
+        local Look=Camera.CFrame.LookVector
+        local Right=Camera.CFrame.RightVector
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then Move=Move+Look end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then Move=Move-Look end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then Move=Move-Right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then Move=Move+Right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then Move=Move+Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then Move=Move-Vector3.new(0,1,0) end
+        if Move.Magnitude>0 then BV.Velocity=Move.Unit*_G.FlySpd else BV.Velocity=Vector3.new(0,0,0) end
+    end
+end)
+
+-- UI INTERACTION
+HideBtn.MouseButton1Click:Connect(function()
+    Main.Visible=false
+    FloatBtn.Visible=true
+end)
+
+FloatBtn.MouseButton1Click:Connect(function()
+    Main.Visible=true
+    FloatBtn.Visible=false
+end)
+
+CloseBtn.MouseButton1Click:Connect(function() Screen:Destroy() end)
+
+-- Draggable Logic
+local DragStart, StartPos
+Header.InputBegan:Connect(function(Input)
+    if Input.UserInputType==Enum.UserInputType.Touch or Input.UserInputType==Enum.UserInputType.MouseButton1 then
+        DragStart=Input.Position; StartPos=Main.Position
+        Input.Changed:Connect(function()
+            if Input.UserInputState==Enum.UserInputState.End then else
+                local Delta=Input.Position-DragStart
+                Main.Position=UDim2.new(StartPos.X.Scale,StartPos.X.Offset+Delta.X,StartPos.Y.Scale,StartPos.Y.Offset+Delta.Y)
+            end
+        end)
+    end
+end)
+
+AddLog("TheSkyfall-Hub v14.0 APEX loaded. Clean UI active.")
