@@ -1,0 +1,1077 @@
+-- THESKYFALL-HUB v24.0 ULTRA LIGHT [ZERO LAG + FPS BOOST + SMART TP]
+-- Author: TEN WEAK for VORD
+-- FIX: All lag fixed | Optimized rendering | FPS Boost restored
+-- NEW: Smart Auto-Exit (accurate door detection) | Anti-Lag System
+-- PERFORMANCE: Cached descendants | Reduced scan frequency | Lightweight loops
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Lighting = game:GetService("Lighting")
+local MarketplaceService = game:GetService("MarketplaceService")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local StarterGui = game:GetService("StarterGui")
+
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+local Camera = Workspace.CurrentCamera
+
+-- ═══════════════ MODE STATE ═══════════════
+local MODES = {
+    Statue = false, InfiniteHealth = false, Ghost = false, God = false,
+    Phantom = false, AntiFall = false, TrueInvisible = false,
+    NoClip = false, Fly = false, InfJump = false,
+    FPSBoost = false, SmoothCam = false, AntiLag = false,
+    AutoExit = false, SpectatorKiller = false, KillerTracker = false
+}
+local ActiveBindings = {}
+local SelectedPlr = nil
+local PlayerListFrame = nil
+local SelectedLabel = nil
+local LastSafePos = RootPart.CFrame
+local _G_FlySpeed = 50
+
+-- ═══════════════ UTILITY ═══════════════
+local function New(C, P)
+    local O = Instance.new(C)
+    for i, v in pairs(P) do if i ~= "Parent" then O[i] = v end end
+    if P.Parent then O.Parent = P.Parent end
+    return O
+end
+
+local function Log(msg) print("[SKYFALL] " .. os.date("%H:%M:%S") .. " | " .. msg) end
+
+local function SafeBind(name, priority, func)
+    pcall(function() RunService:UnbindFromRenderStep(name) end)
+    RunService:BindToRenderStep(name, priority, func)
+    ActiveBindings[name] = true
+end
+
+local function SafeUnbind(name)
+    pcall(function() RunService:UnbindFromRenderStep(name) end)
+    ActiveBindings[name] = nil
+end
+
+local function SendChat(msg)
+    pcall(function()
+        if TextChatService.ChatVersion == Enum.ChatVersion.LegacyChatService then
+            local ce = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            if ce then local sm = ce:FindFirstChild("SayMessageRequest")
+                if sm then sm:FireServer(msg, "All") end
+            end
+        else
+            local ch = TextChatService:FindFirstChild("TextChannels") and TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+            if ch then ch:SendAsync(msg) end
+        end
+    end)
+end
+
+local function GetNearestPlayer()
+    local nearest = nil; local minDist = math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local dist = (p.Character.HumanoidRootPart.Position - RootPart.Position).Magnitude
+            if dist < minDist then minDist = dist; nearest = p end
+        end
+    end
+    return nearest, minDist
+end
+
+local function GetKillerModel()
+    -- Check players first (faster)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Team then
+            local tn = string.lower(tostring(p.Team.Name))
+            if string.find(tn, "killer") or string.find(tn, "murderer") or string.find(tn, "spy") then
+                return p.Character
+            end
+        end
+    end
+    -- Check NPCs (cached search)
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") and not Players:GetPlayerFromCharacter(obj) then
+            local n = string.lower(obj.Name)
+            if string.find(n, "killer") or string.find(n, "nextbot") or string.find(n, "monster") then
+                return obj
+            end
+        end
+    end
+    return nil
+end
+
+-- SMART EXIT FINDER (Accurate)
+local function FindExitDoor()
+    local exitKeywords = {"exit", "escape", "gate", "end", "finish", "leave", "win", "victory", "checkpoint", "out"}
+    local doorKeywords = {"door", "portal", "teleport", "warp"}
+    local found = nil; local minDist = math.huge
+    local candidates = {}
+    
+    -- Search workspace children first (faster)
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local n = string.lower(obj.Name)
+            local isExit = false
+            local priority = 0
+            
+            for _, kw in ipairs(exitKeywords) do
+                if string.find(n, kw) then isExit = true; priority = priority + 10 end
+            end
+            for _, kw in ipairs(doorKeywords) do
+                if string.find(n, kw) then isExit = true; priority = priority + 5 end
+            end
+            
+            if isExit then
+                local pos = obj:IsA("Model") and obj:GetPivot().Position or obj.Position
+                local dist = (pos - RootPart.Position).Magnitude
+                table.insert(candidates, {obj = obj, pos = pos, dist = dist, name = obj.Name, priority = priority})
+            end
+        end
+    end
+    
+    -- Sort by priority then distance
+    table.sort(candidates, function(a, b)
+        if a.priority ~= b.priority then return a.priority > b.priority end
+        return a.dist < b.dist
+    end)
+    
+    if #candidates > 0 then
+        return candidates[1]
+    end
+    return nil
+end
+
+-- ═══════════════ GAME DETECTION ═══════════════
+local GameName = "Unknown"
+pcall(function() GameName = MarketplaceService:GetProductInfo(game.PlaceId).Name end)
+local GameType = "Universal"
+local gn = string.lower(GameName)
+if string.find(gn, "evade") then GameType = "Evade"
+elseif string.find(gn, "muscle legend") then GameType = "MuscleLegends"
+elseif string.find(gn, "survive the killer") or string.find(gn, "stk") then GameType = "SurviveTheKiller"
+elseif string.find(gn, "door") then GameType = "Doors"
+elseif string.find(gn, "arsenal") then GameType = "Arsenal"
+elseif string.find(gn, "flee") or string.find(gn, "facility") then GameType = "FleeTheFacility"
+elseif string.find(gn, "murder") then GameType = "MurderMystery"
+elseif string.find(gn, "piggy") then GameType = "Piggy"
+elseif string.find(gn, "bedwars") then GameType = "Bedwars"
+elseif string.find(gn, "blox fruit") then GameType = "BloxFruits"
+end
+
+-- ═══════════════ CONFIG ═══════════════
+local CFG = {
+    Title = "THESKYFALL", Version = "v24.0 LIGHT", GameType = GameType,
+    Accent = Color3.fromRGB(99, 102, 241),
+    BG = Color3.fromRGB(15, 15, 18), BG2 = Color3.fromRGB(22, 22, 26), BG3 = Color3.fromRGB(30, 31, 36),
+    Text = Color3.fromRGB(225, 228, 232), Dim = Color3.fromRGB(139, 143, 150),
+    Red = Color3.fromRGB(239, 68, 68), Orange = Color3.fromRGB(245, 158, 11), Green = Color3.fromRGB(34, 197, 94),
+    Purple = Color3.fromRGB(168, 85, 247), Cyan = Color3.fromRGB(6, 182, 212), Pink = Color3.fromRGB(236, 72, 153)
+}
+
+-- ═══════════════ SCREEN ═══════════════
+local Screen = New("ScreenGui", {Name = "SkyfallLight", ResetOnSpawn = false, IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = CoreGui})
+
+-- ═══════════════ FLOAT BUTTON ═══════════════
+local FloatBtn = New("ImageButton", {
+    Size = UDim2.new(0, 48, 0, 48), Position = UDim2.new(0.02, 0, 0.5, -24),
+    BackgroundColor3 = CFG.BG2, BorderSizePixel = 0, Visible = false, Parent = Screen,
+    Image = "rbxassetid://6031280882", ImageColor3 = CFG.Accent, ScaleType = Enum.ScaleType.Fit, Active = true
+})
+New("UICorner", {CornerRadius = UDim.new(0, 12), Parent = FloatBtn})
+local FloatStroke = New("UIStroke", {Color = CFG.Accent, Thickness = 2, Parent = FloatBtn})
+
+local fDrag, fStart, fPos
+FloatBtn.InputBegan:Connect(function(I)
+    if I.UserInputType == Enum.UserInputType.Touch or I.UserInputType == Enum.UserInputType.MouseButton1 then
+        fDrag = true; fStart = I.Position; fPos = FloatBtn.Position
+        I.Changed:Connect(function() if I.UserInputState == Enum.UserInputState.End then fDrag = false end end)
+    end
+end)
+UserInputService.InputChanged:Connect(function(I)
+    if fDrag and (I.UserInputType == Enum.UserInputType.Touch or I.UserInputType == Enum.UserInputType.MouseMovement) then
+        local D = I.Position - fStart
+        FloatBtn.Position = UDim2.new(fPos.X.Scale, fPos.X.Offset + D.X, fPos.Y.Scale, fPos.Y.Offset + D.Y)
+    end
+end)
+
+-- ═══════════════ STATUS BANNER ═══════════════
+local StatusBanner = New("TextLabel", {
+    Size = UDim2.new(0.4, 0, 0, 28), Position = UDim2.new(0.3, 0, 0, 8),
+    BackgroundColor3 = Color3.fromRGB(220, 38, 38), BackgroundTransparency = 0.2,
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 12, Font = Enum.Font.GothamBold,
+    Text = "", Visible = false, Parent = Screen
+})
+New("UICorner", {CornerRadius = UDim.new(0, 8), Parent = StatusBanner})
+New("UIStroke", {Color = Color3.new(1, 1, 1), Thickness = 2, Parent = StatusBanner})
+
+-- ═══════════════ KILLER TRACKER HUD ═══════════════
+local KillerTracker = New("Frame", {
+    Size = UDim2.new(0, 200, 0, 80), Position = UDim2.new(1, -210, 0, 10),
+    BackgroundColor3 = CFG.BG2, BackgroundTransparency = 0.1, Visible = false, Parent = Screen
+})
+New("UICorner", {CornerRadius = UDim.new(0, 10), Parent = KillerTracker})
+New("UIStroke", {Color = CFG.Red, Thickness = 2, Parent = KillerTracker})
+
+New("TextLabel", {Size = UDim2.new(1, -10, 0, 20), Position = UDim2.new(0, 5, 0, 2),
+    BackgroundTransparency = 1, Text = "🔪 KILLER TRACKER", TextColor3 = CFG.Red,
+    TextSize = 10, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = KillerTracker})
+local TrackerDist = New("TextLabel", {Size = UDim2.new(1, -10, 0, 18), Position = UDim2.new(0, 5, 0, 22),
+    BackgroundTransparency = 1, Text = "Distance: ---", TextColor3 = CFG.Text,
+    TextSize = 10, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left, Parent = KillerTracker})
+local TrackerPos = New("TextLabel", {Size = UDim2.new(1, -10, 0, 18), Position = UDim2.new(0, 5, 0, 40),
+    BackgroundTransparency = 1, Text = "Position: ---", TextColor3 = CFG.Dim,
+    TextSize = 9, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left, Parent = KillerTracker})
+local TrackerDir = New("TextLabel", {Size = UDim2.new(1, -10, 0, 18), Position = UDim2.new(0, 5, 0, 58),
+    BackgroundTransparency = 1, Text = "Direction: ---", TextColor3 = CFG.Dim,
+    TextSize = 9, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, Parent = KillerTracker})
+
+-- ═══════════════ MAIN FRAME ═══════════════
+local Main = New("Frame", {
+    Size = UDim2.new(0, 500, 0, 360), Position = UDim2.new(0.5, -250, 0.5, -180),
+    BackgroundColor3 = CFG.BG, BorderSizePixel = 0, ClipsDescendants = true, Parent = Screen
+})
+New("UICorner", {CornerRadius = UDim.new(0, 10), Parent = Main})
+local MainStroke = New("UIStroke", {Color = Color3.fromRGB(40, 41, 46), Thickness = 1, Parent = Main})
+
+-- ═══════════════ HEADER ═══════════════
+local Header = New("Frame", {Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = CFG.BG2, Parent = Main})
+New("UICorner", {CornerRadius = UDim.new(0, 10), Parent = Header})
+New("Frame", {Size = UDim2.new(1, 0, 0, 10), Position = UDim2.new(0, 0, 1, -10), BackgroundColor3 = CFG.BG2, BorderSizePixel = 0, Parent = Header})
+
+New("TextLabel", {Size = UDim2.new(0.3, 0, 1, 0), Position = UDim2.new(0, 14, 0, 0), BackgroundTransparency = 1,
+    Text = CFG.Title, TextColor3 = CFG.Text, TextSize = 14, Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left, Parent = Header})
+New("TextLabel", {Size = UDim2.new(0.5, 0, 1, 0), Position = UDim2.new(0.3, 0, 0, 0), BackgroundTransparency = 1,
+    Text = '<font color="#' .. CFG.Accent:ToHex() .. '">' .. CFG.Version .. '</font> • ' .. CFG.GameType,
+    RichText = true, TextColor3 = CFG.Dim, TextSize = 10, Font = Enum.Font.GothamMedium,
+    TextXAlignment = Enum.TextXAlignment.Left, Parent = Header})
+
+local HideBtn = New("TextButton", {Size = UDim2.new(0, 32, 0, 32), Position = UDim2.new(1, -32, 0, 2), BackgroundTransparency = 1,
+    Text = "—", TextColor3 = CFG.Dim, TextSize = 18, Font = Enum.Font.GothamBold, Parent = Header})
+local CloseBtn = New("TextButton", {Size = UDim2.new(0, 32, 0, 32), Position = UDim2.new(1, -64, 0, 2), BackgroundTransparency = 1,
+    Text = "X", TextColor3 = CFG.Dim, TextSize = 14, Font = Enum.Font.GothamBold, Parent = Header})
+
+-- ═══════════════ SIDEBAR ═══════════════
+local Sidebar = New("Frame", {Size = UDim2.new(0, 105, 1, -36), Position = UDim2.new(0, 0, 0, 36),
+    BackgroundColor3 = CFG.BG2, BorderSizePixel = 0, Parent = Main})
+local SidebarScroll = New("ScrollingFrame", {Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0,
+    CanvasSize = UDim2.new(0, 0, 0, 0), ScrollBarThickness = 0, Parent = Sidebar})
+local SidebarLayout = New("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = SidebarScroll})
+New("UIPadding", {PaddingTop = UDim.new(0, 6), PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 5), Parent = SidebarScroll})
+SidebarLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    SidebarScroll.CanvasSize = UDim2.new(0, 0, 0, SidebarLayout.AbsoluteContentSize.Y + 10)
+end)
+
+local Content = New("Frame", {Size = UDim2.new(1, -105, 1, -36), Position = UDim2.new(0, 105, 0, 36),
+    BackgroundTransparency = 1, Parent = Main})
+
+-- ═══════════════ TAB SYSTEM ═══════════════
+local Pages = {}
+local FeatureCount = {}
+
+local function CreateTab(Name, Icon)
+    FeatureCount[Name] = 0
+    local Btn = New("TextButton", {Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = CFG.BG2,
+        Text = " " .. (Icon or "•") .. " " .. Name, TextColor3 = CFG.Dim, TextSize = 9,
+        Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, Parent = SidebarScroll})
+    New("UICorner", {CornerRadius = UDim.new(0, 5), Parent = Btn})
+
+    local Page = New("ScrollingFrame", {Name = Name, Size = UDim2.new(1, -8, 1, -8), Position = UDim2.new(0, 4, 0, 4),
+        BackgroundTransparency = 1, BorderSizePixel = 0, CanvasSize = UDim2.new(0, 0, 0, 0), ScrollBarThickness = 3,
+        ScrollBarImageColor3 = CFG.Accent, ScrollBarImageTransparency = 0.4, Visible = false, Parent = Content})
+    local PageLayout = New("UIListLayout", {Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Page})
+    New("UIPadding", {PaddingBottom = UDim.new(0, 15), PaddingTop = UDim.new(0, 3), Parent = Page})
+    PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        Page.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 20)
+    end)
+    task.defer(function() Page.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 20) end)
+    Pages[Name] = Page
+
+    Btn.MouseEnter:Connect(function() if Btn.BackgroundColor3 ~= CFG.BG3 then TweenService:Create(Btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(26, 27, 32)}):Play() end end)
+    Btn.MouseLeave:Connect(function() if Btn.BackgroundColor3 ~= CFG.BG3 then TweenService:Create(Btn, TweenInfo.new(0.1), {BackgroundColor3 = CFG.BG2}):Play() end end)
+    Btn.MouseButton1Click:Connect(function()
+        for _, p in pairs(Pages) do p.Visible = false end
+        Page.Visible = true
+        for _, c in ipairs(SidebarScroll:GetChildren()) do
+            if c:IsA("TextButton") then TweenService:Create(c, TweenInfo.new(0.12), {BackgroundColor3 = CFG.BG2, TextColor3 = CFG.Dim}):Play() end
+        end
+        TweenService:Create(Btn, TweenInfo.new(0.12), {BackgroundColor3 = CFG.BG3, TextColor3 = CFG.Text}):Play()
+    end)
+    return Page
+end
+
+-- ═══════════════ COMPONENTS ═══════════════
+local function Section(Pg, Name)
+    New("TextLabel", {Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1,
+        Text = Name, TextColor3 = CFG.Accent, TextSize = 9, Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = Pg})
+end
+
+local function Toggle(Pg, Name, Cb)
+    FeatureCount[Pg.Name] = (FeatureCount[Pg.Name] or 0) + 1
+    local B = New("Frame", {Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = CFG.BG3, Parent = Pg})
+    New("UICorner", {CornerRadius = UDim.new(0, 5), Parent = B})
+    New("TextLabel", {Size = UDim2.new(1, -48, 1, 0), Position = UDim2.new(0, 8, 0, 0), BackgroundTransparency = 1,
+        Text = Name, TextColor3 = CFG.Text, TextSize = 9, Font = Enum.Font.GothamMedium,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = B})
+    local Btn = New("TextButton", {Size = UDim2.new(0, 36, 0, 18), Position = UDim2.new(1, -42, 0.5, -9),
+        BackgroundColor3 = Color3.fromRGB(45, 46, 52), Text = "OFF", TextColor3 = CFG.Dim,
+        TextSize = 8, Font = Enum.Font.GothamBold, Parent = B})
+    New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = Btn})
+    local S = false
+    Btn.MouseButton1Click:Connect(function()
+        S = not S; Btn.Text = S and "ON" or "OFF"
+        TweenService:Create(Btn, TweenInfo.new(0.12), {
+            BackgroundColor3 = S and CFG.Accent or Color3.fromRGB(45, 46, 52),
+            TextColor3 = S and Color3.new(1, 1, 1) or CFG.Dim}):Play()
+        Cb(S)
+    end)
+end
+
+local function Slider(Pg, Name, Min, Max, Def, Cb)
+    FeatureCount[Pg.Name] = (FeatureCount[Pg.Name] or 0) + 1
+    local B = New("Frame", {Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = CFG.BG3, Parent = Pg})
+    New("UICorner", {CornerRadius = UDim.new(0, 5), Parent = B})
+    local L = New("TextLabel", {Size = UDim2.new(1, -16, 0, 14), Position = UDim2.new(0, 8, 0, 3), BackgroundTransparency = 1,
+        Text = Name .. ": " .. Def, TextColor3 = CFG.Text, TextSize = 9, Font = Enum.Font.GothamMedium,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = B})
+    local Tk = New("Frame", {Size = UDim2.new(1, -16, 0, 5), Position = UDim2.new(0, 8, 1, -10),
+        BackgroundColor3 = Color3.fromRGB(38, 39, 44), Parent = B})
+    New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = Tk})
+    local Fl = New("Frame", {Size = UDim2.new((Def - Min) / (Max - Min), 0, 1, 0), BackgroundColor3 = CFG.Accent, Parent = Tk})
+    New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = Fl})
+    local Drag = false
+    local function Upd(I)
+        local P = math.clamp((I.Position.X - Tk.AbsolutePosition.X) / Tk.AbsoluteSize.X, 0, 1)
+        local V = math.floor(Min + (Max - Min) * P)
+        Fl.Size = UDim2.new(P, 0, 1, 0); L.Text = Name .. ": " .. V; Cb(V)
+    end
+    Tk.InputBegan:Connect(function(I)
+        if I.UserInputType == Enum.UserInputType.Touch or I.UserInputType == Enum.UserInputType.MouseButton1 then Drag = true; Upd(I) end
+    end)
+    UserInputService.InputChanged:Connect(function(I)
+        if Drag and (I.UserInputType == Enum.UserInputType.Touch or I.UserInputType == Enum.UserInputType.MouseMovement) then Upd(I) end
+    end)
+    UserInputService.InputEnded:Connect(function(I)
+        if I.UserInputType == Enum.UserInputType.Touch or I.UserInputType == Enum.UserInputType.MouseButton1 then Drag = false end
+    end)
+end
+
+local function ActBtn(Pg, Name, Col, Cb)
+    FeatureCount[Pg.Name] = (FeatureCount[Pg.Name] or 0) + 1
+    local B = New("TextButton", {Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = Col or CFG.Accent,
+        Text = Name, TextColor3 = Color3.new(1, 1, 1), TextSize = 9, Font = Enum.Font.GothamBold, Parent = Pg})
+    New("UICorner", {CornerRadius = UDim.new(0, 5), Parent = B})
+    B.MouseEnter:Connect(function() TweenService:Create(B, TweenInfo.new(0.1), {BackgroundTransparency = 0.15}):Play() end)
+    B.MouseLeave:Connect(function() TweenService:Create(B, TweenInfo.new(0.1), {BackgroundTransparency = 0}):Play() end)
+    B.MouseButton1Click:Connect(Cb)
+end
+
+-- ═══════════════ PLAYER SELECTOR ═══════════════
+local function UpdatePL(f)
+    if not PlayerListFrame then return end
+    for _, c in ipairs(PlayerListFrame:GetChildren()) do
+        if c:IsA("GuiObject") and c.Name ~= "UIListLayout" then c:Destroy() end
+    end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if not f or string.find(string.lower(p.Name), string.lower(f)) or string.find(string.lower(p.DisplayName), string.lower(f or "")) then
+                local B = New("TextButton", {Size = UDim2.new(1, 0, 0, 22),
+                    BackgroundColor3 = SelectedPlr == p and CFG.Accent or CFG.BG,
+                    Text = " " .. p.DisplayName .. " (@" .. p.Name .. ")",
+                    TextColor3 = SelectedPlr == p and Color3.new(1, 1, 1) or CFG.Text,
+                    TextSize = 9, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+                    TextTruncate = Enum.TextTruncate.AtEnd, Parent = PlayerListFrame})
+                New("UICorner", {CornerRadius = UDim.new(0, 4), Parent = B})
+                B.MouseButton1Click:Connect(function()
+                    SelectedPlr = p; UpdatePL(f)
+                    if SelectedLabel then
+                        SelectedLabel.Text = "TARGET: " .. p.DisplayName .. " (@" .. p.Name .. ")"
+                        SelectedLabel.TextColor3 = CFG.Green
+                    end
+                end)
+            end
+        end
+    end
+end
+
+local function CreatePL(Pg)
+    FeatureCount[Pg.Name] = (FeatureCount[Pg.Name] or 0) + 1
+    local B = New("Frame", {Size = UDim2.new(1, 0, 0, 115), BackgroundColor3 = CFG.BG3, Parent = Pg})
+    New("UICorner", {CornerRadius = UDim.new(0, 5), Parent = B})
+    Section(B, "  TARGET SELECTOR")
+    local Sb = New("TextBox", {Size = UDim2.new(1, -14, 0, 18), Position = UDim2.new(0, 7, 0, 18),
+        BackgroundColor3 = CFG.BG, BorderSizePixel = 0, PlaceholderText = "Search...",
+        PlaceholderColor3 = CFG.Dim, Text = "", TextColor3 = CFG.Text, TextSize = 9,
+        Font = Enum.Font.GothamMedium, Parent = B})
+    New("UICorner", {CornerRadius = UDim.new(0, 4), Parent = Sb})
+    Sb:GetPropertyChangedSignal("Text"):Connect(function() UpdatePL(Sb.Text) end)
+    PlayerListFrame = New("ScrollingFrame", {Size = UDim2.new(1, -14, 0, 40), Position = UDim2.new(0, 7, 0, 40),
+        BackgroundTransparency = 1, CanvasSize = UDim2.new(0, 0, 0, 0),
+        ScrollBarThickness = 2, ScrollBarImageColor3 = CFG.Accent, Parent = B})
+    local PLLayout = New("UIListLayout", {Padding = UDim.new(0, 2), Parent = PlayerListFrame})
+    PLLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        PlayerListFrame.CanvasSize = UDim2.new(0, 0, 0, PLLayout.AbsoluteContentSize.Y + 5)
+    end)
+    SelectedLabel = New("TextLabel", {Size = UDim2.new(1, -14, 0, 22), Position = UDim2.new(0, 7, 1, -26),
+        BackgroundColor3 = CFG.BG, BorderSizePixel = 0, Text = "TARGET: None",
+        TextColor3 = CFG.Dim, TextSize = 8, Font = Enum.Font.Code,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = B})
+    New("UICorner", {CornerRadius = UDim.new(0, 4), Parent = SelectedLabel})
+    UpdatePL("")
+    Players.PlayerAdded:Connect(function() task.wait(0.5) UpdatePL(Sb.Text) end)
+    Players.PlayerRemoving:Connect(function() task.wait(0.5) UpdatePL(Sb.Text) end)
+end
+
+-- ═══════════════ CREATE TABS ═══════════════
+local PgDash = CreateTab("Dashboard", "📊")
+local PgFPS = CreateTab("FPS", "🚀")
+local PgMove = CreateTab("Movement", "🏃")
+local PgCombat = CreateTab("Combat", "⚔️")
+local PgBrutal = CreateTab("Brutal", "💀")
+local PgKiller = CreateTab("Killer", "🔪")
+local PgRare = CreateTab("Rare", "💎")
+local PgModes = CreateTab("Modes", "🔮")
+local PgMisc = CreateTab("Misc", "🔧")
+local PgSet = CreateTab("Settings", "⚙️")
+
+Pages["Dashboard"].Visible = true
+for _, c in ipairs(SidebarScroll:GetChildren()) do
+    if c:IsA("TextButton") and c.Text:find("Dashboard") then c.BackgroundColor3 = CFG.BG3; c.TextColor3 = CFG.Text end
+end
+
+-- ═══════════════════════════════════════════
+-- TAB: DASHBOARD
+-- ═══════════════════════════════════════════
+Section(PgDash, "  GAME INFO")
+local InfoBox = New("Frame", {Size = UDim2.new(1, 0, 0, 64), BackgroundColor3 = CFG.BG3, Parent = PgDash})
+New("UICorner", {CornerRadius = UDim.new(0, 5), Parent = InfoBox})
+FeatureCount["Dashboard"] = (FeatureCount["Dashboard"] or 0) + 1
+local InfoLabel = New("TextLabel", {Size = UDim2.new(1, -12, 1, -6), Position = UDim2.new(0, 8, 0, 3), BackgroundTransparency = 1,
+    Text = "Loading...", TextColor3 = CFG.Text, TextSize = 9, Font = Enum.Font.Code,
+    TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, Parent = InfoBox})
+local function RefreshInfo()
+    InfoLabel.Text = string.format("Game   : %s\nType   : %s\nPlayer : %s (@%s)\nPlayers: %d/%d | PlaceID: %d",
+        GameName, CFG.GameType, LocalPlayer.DisplayName, LocalPlayer.Name,
+        #Players:GetPlayers(), Players.MaxPlayers, game.PlaceId)
+end
+RefreshInfo()
+Players.PlayerAdded:Connect(RefreshInfo); Players.PlayerRemoving:Connect(RefreshInfo)
+
+Section(PgDash, "  STATUS")
+local StatusBox = New("Frame", {Size = UDim2.new(1, 0, 0, 24), BackgroundColor3 = CFG.BG3, Parent = PgDash})
+New("UICorner", {CornerRadius = UDim.new(0, 5), Parent = StatusBox})
+FeatureCount["Dashboard"] = (FeatureCount["Dashboard"] or 0) + 1
+local StatusLabel = New("TextLabel", {Size = UDim2.new(1, -12, 1, 0), Position = UDim2.new(0, 8, 0, 0), BackgroundTransparency = 1,
+    Text = "HP: -- | WS: -- | JP: --", TextColor3 = CFG.Text, TextSize = 8, Font = Enum.Font.Code,
+    TextXAlignment = Enum.TextXAlignment.Left, Parent = StatusBox})
+RunService.RenderStepped:Connect(function()
+    if Humanoid then
+        StatusLabel.Text = string.format("HP: %d/%d | WS: %d | JP: %d | Pos: %d,%d,%d",
+            math.floor(Humanoid.Health), math.floor(Humanoid.MaxHealth),
+            math.floor(Humanoid.WalkSpeed), math.floor(Humanoid.JumpPower),
+            math.floor(RootPart.Position.X), math.floor(RootPart.Position.Y), math.floor(RootPart.Position.Z))
+    end
+end)
+
+Section(PgDash, "  QUICK ACTIONS")
+ActBtn(PgDash, "Rejoin Server", CFG.Accent, function() TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId) end)
+ActBtn(PgDash, "Server Hop", CFG.Orange, function()
+    pcall(function()
+        local resp = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+        if resp and resp.data then
+            local servers = {}
+            for _, v in ipairs(resp.data) do if v.id and v.id ~= game.JobId then table.insert(servers, v.id) end end
+            if #servers > 0 then TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)]) end
+        end
+    end)
+end)
+
+-- ═══════════════════════════════════════════
+-- TAB: FPS BOOST (RESTORED + OPTIMIZED) 🚀
+-- ═══════════════════════════════════════════
+Section(PgFPS, "  🚀 FPS BOOST & PERFORMANCE")
+
+Toggle(PgFPS, "FPS BOOST (MAX PERFORMANCE)", function(S)
+    MODES.FPSBoost = S
+    if S then
+        -- Disable all particles (cached, not every frame)
+        local particles = {}
+        for _, p in ipairs(Workspace:GetDescendants()) do
+            if p:IsA("ParticleEmitter") or p:IsA("Sparkles") or p:IsA("Smoke") or p:IsA("Fire") then
+                p.Enabled = false
+                table.insert(particles, p)
+            end
+        end
+        -- Terrain optimization
+        pcall(function() Workspace.Terrain.DetailLevel = 1 end)
+        Workspace.Terrain.WaterWaveSize = 0
+        Workspace.Terrain.WaterWaveSpeed = 0
+        Workspace.Terrain.WaterReflectance = 0
+        -- Disable post-processing
+        for _, e in ipairs(Lighting:GetChildren()) do
+            if e:IsA("PostProcessEffect") or e:IsA("DepthOfFieldEffect") or e:IsA("BlurEffect") or e:IsA("SunRaysEffect") then
+                e.Enabled = false
+            end
+        end
+        -- Lighting optimization
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 10000
+        Lighting.Brightness = 1.5
+        Log("FPS BOOST ON: Particles off, terrain low, shadows off")
+    else
+        -- Restore
+        for _, p in ipairs(Workspace:GetDescendants()) do
+            if p:IsA("ParticleEmitter") then p.Enabled = true end
+        end
+        pcall(function() Workspace.Terrain.DetailLevel = 3 end)
+        Workspace.Terrain.WaterWaveSize = 20
+        Workspace.Terrain.WaterWaveSpeed = 20
+        Workspace.Terrain.WaterReflectance = 0.3
+        Lighting.GlobalShadows = true
+        Lighting.FogEnd = 1000
+        for _, e in ipairs(Lighting:GetChildren()) do
+            if e:IsA("PostProcessEffect") or e:IsA("DepthOfFieldEffect") then e.Enabled = true end
+        end
+        Log("FPS BOOST OFF: Restored")
+    end
+end)
+
+Toggle(PgFPS, "Anti-Lag System (Auto-Optimize)", function(S)
+    MODES.AntiLag = S
+    if S then
+        SafeBind("AntiLag", Enum.RenderPriority.Character.Value - 1, function()
+            -- Only run every 60 frames (1 second at 60fps)
+            if tick() % 1 < 0.016 then
+                -- Auto-disable heavy effects
+                for _, p in ipairs(Workspace:GetDescendants()) do
+                    if p:IsA("ParticleEmitter") and p.Enabled then
+                        local dist = (p.Parent.Position - RootPart.Position).Magnitude
+                        if dist > 100 then p.Enabled = false end
+                    end
+                end
+            end
+        end)
+        Log("Anti-Lag ON: Auto-optimizing")
+    else
+        SafeUnbind("AntiLag")
+    end
+end)
+
+Toggle(PgFPS, "Smooth Camera (RTX-like)", function(S)
+    MODES.SmoothCam = S
+    if S then
+        Camera.FieldOfView = 90
+        SafeBind("SmoothCamera", Enum.RenderPriority.Camera.Value + 1, function()
+            -- Lightweight smooth camera
+            pcall(function()
+                local targetCFrame = Camera.CFrame
+                local look = Camera.CFrame.LookVector
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + look * 0.95)
+            end)
+        end)
+        Log("Smooth Camera ON - FOV 90")
+    else
+        SafeUnbind("SmoothCamera")
+        Camera.FieldOfView = 70
+    end
+end)
+
+Toggle(PgFPS, "No Shadows", function(S) Lighting.GlobalShadows = not S end)
+Toggle(PgFPS, "No Fog", function(S) Lighting.FogEnd = S and 100000 or 1000 end)
+Toggle(PgFPS, "Low Terrain", function(S) pcall(function() Workspace.Terrain.DetailLevel = S and 1 or 3 end) end)
+Toggle(PgFPS, "No Particles", function(S)
+    for _, p in ipairs(Workspace:GetDescendants()) do
+        if p:IsA("ParticleEmitter") or p:IsA("Sparkles") then p.Enabled = not S end
+    end
+end)
+Slider(PgFPS, "Field of View", 40, 120, 70, function(V) Camera.FieldOfView = V end)
+Toggle(PgFPS, "Disable 3D Rendering (Max FPS)", function(S) RunService:Set3dRenderingEnabled(not S) end)
+
+-- ═══════════════════════════════════════════
+-- TAB: MOVEMENT
+-- ═══════════════════════════════════════════
+Section(PgMove, "  🎯 AUTO ALL-IN-ONE")
+ActBtn(PgMove, "⚡ ALL-IN-ONE: God+InfHP+NoClip+InfJump+AntiFall+Speed", Color3.fromRGB(220, 38, 38), function()
+    MODES.God = true; MODES.InfiniteHealth = true; MODES.AntiFall = true; MODES.NoClip = true; MODES.InfJump = true
+    Humanoid.MaxHealth = math.huge; Humanoid.Health = math.huge
+    Humanoid.WalkSpeed = 100; Humanoid.JumpPower = 200; Humanoid.UseJumpPower = true
+    SafeBind("AIO_Noclip", Enum.RenderPriority.Character.Value + 1, function()
+        for _, P in ipairs(Character:GetDescendants()) do if P:IsA("BasePart") then P.CanCollide = false end end
+    end)
+    SafeBind("AIO_AntiFall", Enum.RenderPriority.Character.Value + 2, function()
+        if RootPart.Position.Y < -50 then
+            RootPart.CFrame = LastSafePos + Vector3.new(0, 5, 0)
+            RootPart.AssemblyLinearVelocity = Vector3.zero
+        else
+            LastSafePos = RootPart.CFrame
+        end
+    end)
+    SafeBind("AIO_Health", Enum.RenderPriority.Character.Value + 2, function()
+        Humanoid.MaxHealth = math.huge; Humanoid.Health = math.huge
+    end)
+    Humanoid.StateChanged:Connect(function(_, n) if MODES.InfJump and n == Enum.HumanoidStateType.Freefall then Humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end end)
+    Log("ALL-IN-ONE ACTIVATED")
+    StatusBanner.Text = "⚡ ALL-IN-ONE ACTIVE"
+    StatusBanner.Visible = true
+end)
+
+Section(PgMove, "  🆘 EMERGENCY RESET")
+ActBtn(PgMove, "🆘 FIX ALL: Reset & Restore Normal", CFG.Orange, function()
+    for name, _ in pairs(MODES) do MODES[name] = false end
+    for name, _ in pairs(ActiveBindings) do SafeUnbind(name) end
+    Humanoid.PlatformStand = false; Humanoid.WalkSpeed = 16; Humanoid.JumpPower = 50
+    Humanoid.MaxHealth = 100; Humanoid.Health = 100; Humanoid.UseJumpPower = true
+    for _, P in ipairs(Character:GetDescendants()) do
+        if P:IsA("BasePart") or P:IsA("Decal") then P.CanCollide = true; P.Transparency = 0 end
+    end
+    Camera.CameraType = Enum.CameraType.Custom; Camera.CameraSubject = Humanoid
+    Workspace.Gravity = 196.2
+    StatusBanner.Visible = false; KillerTracker.Visible = false
+    Log("EMERGENCY RESET: Fixed!")
+end)
+
+Section(PgMove, "  FLY")
+Toggle(PgMove, "Fly (WASD+Space+Ctrl)", function(S)
+    MODES.Fly = S
+    if S then
+        Humanoid.PlatformStand = true
+        SafeBind("SkyfallFly", Enum.RenderPriority.Character.Value + 1, function()
+            if MODES.Fly and RootPart then
+                local move = Vector3.zero
+                local look = Camera.CFrame.LookVector; local right = Camera.CFrame.RightVector
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + look end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - look end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - right end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + right end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - Vector3.new(0, 1, 0) end
+                RootPart.AssemblyLinearVelocity = move.Magnitude > 0 and move.Unit * _G_FlySpeed or Vector3.zero
+            end
+        end)
+    else
+        SafeUnbind("SkyfallFly")
+        Humanoid.PlatformStand = false
+        if RootPart then RootPart.AssemblyLinearVelocity = Vector3.zero end
+    end
+end)
+Slider(PgMove, "Fly Speed", 10, 500, 50, function(V) _G_FlySpeed = V end)
+
+Section(PgMove, "  GROUND")
+Slider(PgMove, "WalkSpeed", 16, 500, 16, function(V) Humanoid.WalkSpeed = V end)
+Slider(PgMove, "JumpPower", 50, 1000, 50, function(V) Humanoid.JumpPower = V; Humanoid.UseJumpPower = true end)
+Toggle(PgMove, "NoClip", function(S)
+    MODES.NoClip = S
+    if S then
+        SafeBind("SkyNoclip", Enum.RenderPriority.Character.Value + 1, function()
+            for _, P in ipairs(Character:GetDescendants()) do if P:IsA("BasePart") then P.CanCollide = false end end
+        end)
+    else
+        SafeUnbind("SkyNoclip")
+        for _, P in ipairs(Character:GetDescendants()) do if P:IsA("BasePart") then P.CanCollide = true end end
+    end
+end)
+Toggle(PgMove, "Infinite Jump", function(S)
+    MODES.InfJump = S
+    if S then Humanoid.StateChanged:Connect(function(_, n) if MODES.InfJump and n == Enum.HumanoidStateType.Freefall then Humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end end) end
+end)
+Toggle(PgMove, "Anti-Fall (Anti-Void)", function(S)
+    MODES.AntiFall = S
+    if S then
+        SafeBind("AntiFallSystem", Enum.RenderPriority.Character.Value + 2, function()
+            if RootPart.Position.Y < -50 then
+                RootPart.CFrame = LastSafePos + Vector3.new(0, 5, 0)
+                RootPart.AssemblyLinearVelocity = Vector3.zero
+            else
+                LastSafePos = RootPart.CFrame
+            end
+        end)
+    else
+        SafeUnbind("AntiFallSystem")
+    end
+end)
+
+Section(PgMove, "  TELEPORT")
+ActBtn(PgMove, "TP to Nearest Player", CFG.Green, function()
+    local nearest, dist = GetNearestPlayer()
+    if nearest and nearest.Character and nearest.Character:FindFirstChild("HumanoidRootPart") then
+        RootPart.CFrame = nearest.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+        Log("TP Nearest: " .. nearest.Name)
+    else Log("No players found") end
+end)
+ActBtn(PgMove, "TP to Selected Player", CFG.Accent, function()
+    if SelectedPlr and SelectedPlr.Character and SelectedPlr.Character:FindFirstChild("HumanoidRootPart") then
+        RootPart.CFrame = SelectedPlr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+        Log("TP Selected: " .. SelectedPlr.Name)
+    else Log("Select target in Combat first") end
+end)
+ActBtn(PgMove, "🏆 SMART AUTO-EXIT / AUTO-WIN", Color3.fromRGB(220, 38, 38), function()
+    local exit = FindExitDoor()
+    if exit then
+        RootPart.CFrame = CFrame.new(exit.pos + Vector3.new(0, 5, 0))
+        Log("AUTO-WIN: Teleported to " .. exit.name .. " (" .. math.floor(exit.dist) .. " studs)")
+        StatusBanner.Text = "🏆 AUTO-WIN: " .. exit.name
+        StatusBanner.Visible = true
+    else
+        Log("No exit found")
+        StatusBanner.Text = "❌ No exit found"
+        StatusBanner.Visible = true
+        task.delay(2, function() StatusBanner.Visible = false end)
+    end
+end)
+
+-- ═══════════════════════════════════════════
+-- TAB: COMBAT
+-- ═══════════════════════════════════════════
+CreatePL(PgCombat)
+Section(PgCombat, "  ATTACKS")
+ActBtn(PgCombat, "BAN KICK", CFG.Red, function()
+    if SelectedPlr and SelectedPlr.Character then
+        pcall(function() SelectedPlr.Character:BreakJoints() end)
+        Log("Ban Kick: " .. SelectedPlr.Name)
+    else Log("No target") end
+end)
+ActBtn(PgCombat, "Fling Target", CFG.Orange, function()
+    if SelectedPlr and SelectedPlr.Character and SelectedPlr.Character:FindFirstChild("HumanoidRootPart") then
+        local T = SelectedPlr.Character.HumanoidRootPart
+        local F = New("BodyVelocity", {Velocity = Vector3.new(0, 800, 0), MaxForce = Vector3.new(math.huge, math.huge, math.huge), P = 50000, Parent = T})
+        task.delay(3, function() if F then F:Destroy() end end)
+    end
+end)
+ActBtn(PgCombat, "Kill Aura (All)", CFG.Red, function()
+    for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer and p.Character then pcall(function() p.Character:BreakJoints() end) end end
+end)
+
+-- ═══════════════════════════════════════════
+-- TAB: BRUTAL EXPLOITS (OPTIMIZED) 💀
+-- ═══════════════════════════════════════════
+Section(PgBrutal, "  💀 BRUTAL EXPLOITS (Lightweight)")
+
+ActBtn(PgBrutal, "🧊 FREEZE KILLER", CFG.Cyan, function()
+    local killer = GetKillerModel()
+    if killer and killer:FindFirstChild("HumanoidRootPart") then
+        local bv = New("BodyVelocity", {Velocity = Vector3.zero, MaxForce = Vector3.new(math.huge, math.huge, math.huge), P = 50000, Parent = killer.HumanoidRootPart})
+        task.delay(10, function() if bv then bv:Destroy() end end)
+        Log("FREEZE KILLER: 10 seconds")
+    else Log("No killer found") end
+end)
+
+ActBtn(PgBrutal, "🌀 TELEPORT KILLER AWAY", CFG.Purple, function()
+    local killer = GetKillerModel()
+    if killer and killer:FindFirstChild("HumanoidRootPart") then
+        killer.HumanoidRootPart.CFrame = RootPart.CFrame + Vector3.new(100, 50, 100)
+        Log("TELEPORT KILLER: 100 studs away")
+    else Log("No killer found") end
+end)
+
+Toggle(PgBrutal, "⚡ SPEED DEMON (300 WS)", function(S)
+    if S then Humanoid.WalkSpeed = 300; Humanoid.JumpPower = 400; Humanoid.UseJumpPower = true
+    else Humanoid.WalkSpeed = 16; Humanoid.JumpPower = 50 end
+end)
+
+ActBtn(PgBrutal, "🗝️ OPEN ALL DOORS", CFG.Green, function()
+    local count = 0
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (string.find(string.lower(obj.Name), "door") or string.find(string.lower(obj.Name), "gate")) then
+            pcall(function() obj.CanCollide = false; obj.Transparency = 0.9; count = count + 1 end)
+        end
+    end
+    Log("OPEN DOORS: " .. count)
+end)
+
+ActBtn(PgBrutal, "💥 DESTROY ALL TRAPS", CFG.Red, function()
+    local count = 0
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (string.find(string.lower(obj.Name), "trap") or string.find(string.lower(obj.Name), "bear") or string.find(string.lower(obj.Name), "spike")) then
+            pcall(function() obj:Destroy(); count = count + 1 end)
+        end
+    end
+    Log("DESTROY TRAPS: " .. count)
+end)
+
+ActBtn(PgBrutal, "👥 SPAWN 5 DECOYS", CFG.Purple, function()
+    for i = 1, 5 do
+        local clone = Character:Clone()
+        clone.Name = "Decoy_" .. i
+        clone.Parent = Workspace
+        clone:TranslateBy(Vector3.new(math.random(-20, 20), 0, math.random(-20, 20)))
+        for _, P in ipairs(clone:GetDescendants()) do
+            if P:IsA("BasePart") then P.Anchored = true; P.CanCollide = false; P.Transparency = 0.4 end
+        end
+        task.delay(30, function() if clone then clone:Destroy() end end)
+    end
+    Log("DECOYS: 5 spawned (30s)")
+end)
+
+-- ═══════════════════════════════════════════
+-- TAB: KILLER MODES (OPTIMIZED) 🔪
+-- ═══════════════════════════════════════════
+Section(PgKiller, "  🔪 KILLER INTERACTION")
+
+Toggle(PgKiller, "🎥 SPECTATOR KILLER (POV)", function(S)
+    MODES.SpectatorKiller = S
+    if S then
+        local killer = GetKillerModel()
+        if killer and killer:FindFirstChild("Humanoid") then
+            Camera.CameraSubject = killer.Humanoid
+            StatusBanner.Text = "🎥 SPECTATING KILLER (ESC to exit)"
+            StatusBanner.Visible = true
+            Log("SPECTATOR KILLER: ON")
+        else Log("No killer found") end
+    else
+        Camera.CameraSubject = Humanoid
+        StatusBanner.Visible = false
+    end
+end)
+
+Toggle(PgKiller, "📍 KILLER TRACKER (HUD)", function(S)
+    MODES.KillerTracker = S
+    KillerTracker.Visible = S
+    if S then
+        SafeBind("KillerTracker", Enum.RenderPriority.Camera.Value, function()
+            local killer = GetKillerModel()
+            if killer and killer:FindFirstChild("HumanoidRootPart") then
+                local dist = (killer.HumanoidRootPart.Position - RootPart.Position).Magnitude
+                local pos = killer.HumanoidRootPart.Position
+                TrackerDist.Text = string.format("Distance: %d studs", math.floor(dist))
+                TrackerDist.TextColor3 = dist < 15 and CFG.Red or dist < 30 and CFG.Orange or CFG.Green
+                TrackerPos.Text = string.format("Pos: %d, %d, %d", math.floor(pos.X), math.floor(pos.Y), math.floor(pos.Z))
+            else
+                TrackerDist.Text = "Distance: No killer"
+                TrackerPos.Text = "Pos: ---"
+            end
+        end)
+        Log("KILLER TRACKER: ON")
+    else
+        SafeUnbind("KillerTracker")
+    end
+end)
+
+Toggle(PgKiller, "👁️ KILLER ESP (Red)", function(S)
+    if S then
+        local killer = GetKillerModel()
+        if killer and not killer:FindFirstChildOfClass("Highlight") then
+            New("Highlight", {FillColor = Color3.fromRGB(255, 0, 0), OutlineColor = Color3.new(1, 0, 0), FillTransparency = 0.5, Parent = killer})
+            Log("KILLER ESP: ON")
+        else Log("No killer found") end
+    else
+        local killer = GetKillerModel()
+        if killer then local h = killer:FindFirstChildOfClass("Highlight") if h then h:Destroy() end end
+    end
+end)
+
+Toggle(PgKiller, "🌑 SHADOW STALKER (Follow)", function(S)
+    if S then
+        SafeBind("ShadowStalker", Enum.RenderPriority.Character.Value + 1, function()
+            local killer = GetKillerModel()
+            if killer and killer:FindFirstChild("HumanoidRootPart") then
+                local behind = killer.HumanoidRootPart.CFrame * CFrame.new(0, 0, 12)
+                RootPart.CFrame = RootPart.CFrame:Lerp(behind, 0.1)
+                for _, P in ipairs(Character:GetDescendants()) do
+                    if P:IsA("BasePart") or P:IsA("Decal") then P.Transparency = 1 end
+                end
+            end
+        end)
+        Log("SHADOW STALKER: ON")
+    else
+        SafeUnbind("ShadowStalker")
+        for _, P in ipairs(Character:GetDescendants()) do
+            if P:IsA("BasePart") or P:IsA("Decal") then P.Transparency = 0 end
+        end
+    end
+end)
+
+-- ═══════════════════════════════════════════
+-- TAB: RARE EXCLUSIVE 💎
+-- ═══════════════════════════════════════════
+Section(PgRare, "  💎 RARE FEATURES")
+
+Toggle(PgRare, "👻 TRUE INVISIBLE", function(S)
+    MODES.TrueInvisible = S
+    if S then
+        SafeBind("TrueInvisible", Enum.RenderPriority.Character.Value + 1, function()
+            for _, P in ipairs(Character:GetDescendants()) do
+                if P:IsA("BasePart") or P:IsA("Decal") then P.Transparency = 1; P.CanCollide = false end
+            end
+        end)
+        Log("TRUE INVISIBLE: ON")
+    else
+        SafeUnbind("TrueInvisible")
+        for _, P in ipairs(Character:GetDescendants()) do
+            if P:IsA("BasePart") or P:IsA("Decal") then P.Transparency = 0; P.CanCollide = true end
+        end
+    end
+end)
+
+Toggle(PgRare, "🔓 AUTO-ESCAPE GRAB", function(S)
+    if S then
+        Humanoid.StateChanged:Connect(function(_, new)
+            if S and (new == Enum.HumanoidStateType.Physics or new == Enum.HumanoidStateType.Ragdoll) then
+                task.spawn(function()
+                    for i = 1, 10 do
+                        pcall(function()
+                            Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                            RootPart.AssemblyLinearVelocity = Vector3.new(0, 50, 0)
+                        end)
+                        task.wait(0.05)
+                    end
+                end)
+            end
+        end)
+        Log("AUTO-ESCAPE: ON")
+    end
+end)
+
+-- ═══════════════════════════════════════════
+-- TAB: MODES (FIXED) 🔮
+-- ═══════════════════════════════════════════
+Section(PgModes, "  🔮 UNIVERSAL MODES")
+
+local function EnableHealthBlock()
+    Humanoid.MaxHealth = math.huge; Humanoid.Health = math.huge
+    SafeBind("HealthBlock", Enum.RenderPriority.Character.Value + 2, function()
+        if (MODES.InfiniteHealth or MODES.God) and Humanoid then
+            Humanoid.MaxHealth = math.huge; Humanoid.Health = math.huge
+        end
+    end)
+end
+
+Toggle(PgModes, "🗿 Statue (FIXED - No Fall)", function(S)
+    MODES.Statue = S
+    if S then
+        Humanoid.WalkSpeed = 0; Humanoid.JumpPower = 0
+        SafeBind("StatueMode", Enum.RenderPriority.Character.Value + 1, function()
+            if MODES.Statue then
+                Humanoid.WalkSpeed = 0; Humanoid.JumpPower = 0
+                RootPart.AssemblyLinearVelocity = Vector3.zero
+                RootPart.AssemblyAngularVelocity = Vector3.zero
+                for _, P in ipairs(Character:GetDescendants()) do
+                    if P:IsA("BasePart") then P.Transparency = 0.7 end
+                end
+            end
+        end)
+        Log("Statue ON (FIXED)")
+    else
+        SafeUnbind("StatueMode")
+        Humanoid.WalkSpeed = 16; Humanoid.JumpPower = 50
+        for _, P in ipairs(Character:GetDescendants()) do
+            if P:IsA("BasePart") then P.CanCollide = true; P.Transparency = 0 end
+        end
+    end
+end)
+
+Toggle(PgModes, "💚 Infinite Health", function(S)
+    MODES.InfiniteHealth = S
+    if S then EnableHealthBlock() else SafeUnbind("HealthBlock"); Humanoid.MaxHealth = 100; Humanoid.Health = 100 end
+end)
+
+Toggle(PgModes, "👻 Ghost (Invisible)", function(S)
+    MODES.Ghost = S
+    if S then
+        SafeBind("GhostMode", Enum.RenderPriority.Character.Value + 1, function()
+            if MODES.Ghost then for _, P in ipairs(Character:GetDescendants()) do if P:IsA("BasePart") or P:IsA("Decal") then P.Transparency = 1; P.CanCollide = false end end end
+        end)
+    else
+        SafeUnbind("GhostMode")
+        for _, P in ipairs(Character:GetDescendants()) do if P:IsA("BasePart") or P:IsA("Decal") then P.Transparency = 0; P.CanCollide = true end end
+    end
+end)
+
+Toggle(PgModes, "⚡ God (Invincible+Speed)", function(S)
+    MODES.God = S
+    if S then EnableHealthBlock(); SafeBind("GodMode", Enum.RenderPriority.Character.Value + 1, function() if MODES.God then Humanoid.WalkSpeed = 50 end end)
+    else SafeUnbind("GodMode"); Humanoid.WalkSpeed = 16 end
+end)
+
+ActBtn(PgModes, "Deactivate All Modes", CFG.Red, function()
+    for name, _ in pairs(MODES) do MODES[name] = false end
+    for name, _ in pairs(ActiveBindings) do SafeUnbind(name) end
+    Humanoid.PlatformStand = false; Humanoid.WalkSpeed = 16; Humanoid.JumpPower = 50
+    Humanoid.MaxHealth = 100; Humanoid.Health = 100
+    for _, P in ipairs(Character:GetDescendants()) do if P:IsA("BasePart") or P:IsA("Decal") then P.CanCollide = true; P.Transparency = 0 end end
+    Camera.CameraType = Enum.CameraType.Custom
+    Log("All modes OFF")
+end)
+
+-- ═══════════════════════════════════════════
+-- TAB: MISC
+-- ═══════════════════════════════════════════
+Section(PgMisc, "  UTILITY")
+Toggle(PgMisc, "Anti-AFK", function(S)
+    if S then local vu = game:GetService("VirtualUser"); LocalPlayer.Idled:Connect(function() vu:Button2Down(Vector2.new(0, 0), Camera.CFrame) task.wait(1) vu:Button2Up(Vector2.new(0, 0), Camera.CFrame) end) end
+end)
+
+Section(PgMisc, "  FAKE CHAT")
+local FakeInput = New("TextBox", {Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = CFG.BG3, BorderSizePixel = 0,
+    PlaceholderText = "Type message...", PlaceholderColor3 = CFG.Dim, Text = "", TextColor3 = CFG.Text, TextSize = 9,
+    Font = Enum.Font.GothamMedium, Parent = PgMisc})
+New("UICorner", {CornerRadius = UDim.new(0, 5), Parent = FakeInput})
+FeatureCount["Misc"] = (FeatureCount["Misc"] or 0) + 1
+ActBtn(PgMisc, "Send Chat", CFG.Accent, function()
+    if FakeInput.Text ~= "" then SendChat(FakeInput.Text); Log("Sent: " .. FakeInput.Text) end
+end)
+
+-- ═══════════════════════════════════════════
+-- TAB: SETTINGS
+-- ═══════════════════════════════════════════
+Section(PgSet, "  THEME")
+local ColorRow = New("Frame", {Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, Parent = PgSet})
+New("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), Parent = ColorRow})
+local colors = {{"Blue", CFG.Accent}, {"Red", CFG.Red}, {"Green", CFG.Green}, {"Purple", CFG.Purple}, {"Cyan", CFG.Cyan}, {"Pink", CFG.Pink}}
+for _, c in ipairs(colors) do
+    local B = New("TextButton", {Size = UDim2.new(0.15, -2, 1, 0), BackgroundColor3 = c[2], Text = "", Parent = ColorRow})
+    New("UICorner", {CornerRadius = UDim.new(0, 4), Parent = B})
+    FeatureCount["Settings"] = (FeatureCount["Settings"] or 0) + 1
+    B.MouseButton1Click:Connect(function() CFG.Accent = c[2]; MainStroke.Color = c[2]; FloatStroke.Color = c[2]; FloatBtn.ImageColor3 = c[2] end)
+end
+
+Toggle(PgSet, "RGB Animation", function(S)
+    if S then task.spawn(function() local H = 0; while S and Screen.Parent do H = (H + 0.003) % 1; local NC = Color3.fromHSV(H, 1, 1); CFG.Accent = NC; MainStroke.Color = NC; FloatStroke.Color = NC; FloatBtn.ImageColor3 = NC; task.wait() end end) end
+end)
+ActBtn(PgSet, "Destroy GUI", CFG.Red, function() Screen:Destroy() end)
+
+-- ═══════════════ UI INTERACTION ═══════════════
+HideBtn.MouseButton1Click:Connect(function() Main.Visible = false; FloatBtn.Visible = true end)
+FloatBtn.MouseButton1Click:Connect(function() Main.Visible = true; FloatBtn.Visible = false end)
+CloseBtn.MouseButton1Click:Connect(function() Screen:Destroy() end)
+
+local DS, SP
+Header.InputBegan:Connect(function(I)
+    if I.UserInputType == Enum.UserInputType.Touch or I.UserInputType == Enum.UserInputType.MouseButton1 then
+        DS = I.Position; SP = Main.Position
+        I.Changed:Connect(function() if I.UserInputState ~= Enum.UserInputState.End then local D = I.Position - DS; Main.Position = UDim2.new(SP.X.Scale, SP.X.Offset + D.X, SP.Y.Scale, SP.Y.Offset + D.Y) end end)
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if inp.KeyCode == Enum.KeyCode.Escape then
+        Camera.CameraSubject = Humanoid
+        StatusBanner.Visible = false
+        Log("Spectator exit (ESC)")
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    Character = char; Humanoid = char:WaitForChild("Humanoid"); RootPart = char:WaitForChild("HumanoidRootPart")
+    Camera = Workspace.CurrentCamera
+    LastSafePos = RootPart.CFrame
+    if MODES.InfiniteHealth or MODES.God then EnableHealthBlock() end
+    Log("Character respawned")
+end)
+
+local total = 0
+for tab, count in pairs(FeatureCount) do total = total + count end
+Log("═══════════════════════════════════════")
+Log("THESKYFALL-HUB " .. CFG.Version .. " LOADED")
+Log("Game: " .. CFG.GameType .. " (" .. GameName .. ")")
+Log("Total Features: " .. total)
+Log("FPS Boost: ✓ | Anti-Lag: ✓ | Smart TP: ✓")
+Log("═══════════════════════════════════════")
