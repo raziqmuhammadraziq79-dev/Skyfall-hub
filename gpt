@@ -1,0 +1,40 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CAS = game:GetService("ContextActionService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local root = character:WaitForChild("HumanoidRootPart")
+
+local flying = false
+local speed = 50
+
+local function toggleFly()
+	flying = not flying
+
+	if flying then
+		humanoid.PlatformStand = true
+
+		RunService:BindToRenderStep("Fly", Enum.RenderPriority.Character.Value + 1, function(dt)
+			root.AssemblyLinearVelocity = workspace.CurrentCamera.CFrame.LookVector * speed
+		end)
+	else
+		RunService:UnbindFromRenderStep("Fly")
+		humanoid.PlatformStand = false
+		root.AssemblyLinearVelocity = Vector3.zero
+	end
+end
+
+CAS:BindAction(
+	"ToggleFly",
+	function(_, state)
+		if state == Enum.UserInputState.Begin then
+			toggleFly()
+		end
+	end,
+	true
+)
+
+CAS:SetTitle("ToggleFly", "Fly")
+CAS:SetPosition("ToggleFly", UDim2.new(0.85, 0, 0.7, 0))
