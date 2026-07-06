@@ -1,0 +1,434 @@
+--[[
+	---@module InfernoOmniPremium_V5
+	---@author GODSCRIPTOR
+	---@description Perfect Flat-Vector Flight Engine with Draggable Floating Toggle, Sidebar, and Unified Settings Core.
+]]
+
+-- Services
+local playersService = game:GetService("Players")
+local runService = game:GetService("RunService")
+local workspace = game:GetService("Workspace")
+local coreGui = game:GetService("CoreGui")
+local userInputService = game:GetService("UserInputService")
+local tweenService = game:GetService("TweenService")
+
+-- Configuration & Absolute States
+local localPlayer = playersService.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local States = {
+	Fly = false,
+	Noclip = false,
+	InfJump = false,
+	Esp = false,
+	
+	FlySpeed = 70,
+	JumpPower = 120,
+	SelectedPlayer = nil,
+	PanelOpen = true
+}
+
+local FlyBodyVelocity = nil
+local FlyBodyGyro = nil
+local Connections = {}
+
+--------------------------------------------------------------------------------
+-- RE-ENGINEERED PERFECT FLY DIRECTION ENGINE
+--------------------------------------------------------------------------------
+
+local function cleanFlightEngine()
+	if Connections.FlightLoop then Connections.FlightLoop:Disconnect() Connections.FlightLoop = nil end
+	if FlyBodyVelocity then FlyBodyVelocity:Destroy() FlyBodyVelocity = nil end
+	if FlyBodyGyro then FlyBodyGyro:Destroy() FlyBodyGyro = nil end
+	local char = localPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then hum.PlatformStand = false end
+end
+
+local function toggleFlightEngine(enable)
+	cleanFlightEngine()
+	if not enable then return end
+	
+	local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+	local root = char:WaitForChild("HumanoidRootPart", 5)
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	
+	if not root or not hum then return end
+	hum.PlatformStand = true
+	
+	-- Setup High-Stability Body Movers
+	FlyBodyVelocity = Instance.new("BodyVelocity")
+	FlyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+	FlyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+	FlyBodyVelocity.Parent = root
+	
+	FlyBodyGyro = Instance.new("BodyGyro")
+	FlyBodyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+	FlyBodyGyro.CFrame = root.CFrame
+	FlyBodyGyro.Parent = root
+	
+	Connections.FlightLoop = runService.Heartbeat:Connect(function()
+		if not States.Fly or not localPlayer.Character or not root.Parent then 
+			cleanFlightEngine()
+			return 
+		end
+		
+		local moveDirection = hum.MoveDirection
+		local camCFrame = camera.CFrame
+		
+		if moveDirection.Magnitude > 0 then
+			-- COMPONENT FIX: Extract flat movement plane to block accidental inverted vector loops
+			local camLook = camCFrame.LookVector
+			local camRight = camCFrame.RightVector
+			
+			-- Flatten Y axis for direct horizontal correlation
+			local flatForward = Vector3.new(camLook.X, 0, camLook.Z).Unit
+			local flatRight = Vector3.new(camRight.X, 0, camRight.Z).Unit
+			
+			-- Calculate absolute directional matrix
+			local movementVector = (flatForward * -moveDirection.Z) + (flatRight * moveDirection.X)
+			
+			-- Inject manual vertical correction based on vertical look tilt to allow altitude changes
+			if moveDirection.Z ~= 0 then
+				movementVector = (movementVector + Vector3.new(0, camLook.Y * -moveDirection.Z, 0)).Unit
+			end
+			
+			FlyBodyVelocity.Velocity = movementVector * States.FlySpeed
+		else
+			FlyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+		end
+		
+		-- Maintain smooth gyro tracking matching look view direction
+		FlyBodyGyro.CFrame = CFrame.lookAt(root.Position, root.Position + Vector3.new(camCFrame.LookVector.X, 0, camCFrame.LookVector.Z))
+	end)
+end
+
+-- Core Functionality Injection
+Connections.InfJump = userInputService.JumpRequest:Connect(function()
+	if States.InfJump and localPlayer.Character then
+		local humanoid = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+		if humanoid then humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end
+end)
+
+Connections.Noclip = runService.Stepped:Connect(function()
+	if States.Noclip and localPlayer.Character then
+		for _, part in ipairs(localPlayer.Character:GetDescendants()) do
+			if part:IsA("BasePart") and part.CanCollide then
+				part.CanCollide = false
+			end
+		end
+	end
+end)
+
+--------------------------------------------------------------------------------
+-- DYNAMIC DRAGGABLE LOGIC CREATOR
+--------------------------------------------------------------------------------
+
+local function makeElementDraggable(uiElement)
+	local dragging, dragInput, dragStart, startPos
+	
+	uiElement.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = uiElement.Position
+			
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+	
+	uiElement.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
+		end
+	end)
+	
+	userInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			local delta = input.Position - dragStart
+			uiElement.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
+	end)
+end
+
+--------------------------------------------------------------------------------
+-- HIGH PREMIUM SHARP DARK PURPLE PANEL UI INTERFACE
+--------------------------------------------------------------------------------
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "InfernoPremium_OmniV5"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = getgui and getgui() or coreGui
+
+-- Main Panel (Square Premium Aesthetic)
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 420, 0, 280)
+mainFrame.Position = UDim2.new(0.5, -210, 0.3, -140)
+mainFrame.BackgroundColor3 = Color3.fromRGB(12, 11, 15)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = screenGui
+makeElementDraggable(mainFrame)
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(120, 75, 230) -- Purple Neon Border Accent
+mainStroke.Thickness = 1.8
+mainStroke.Parent = mainFrame
+
+-- Sidebar Design Container
+local sidebar = Instance.new("Frame")
+sidebar.Size = UDim2.new(0, 110, 1, 0)
+sidebar.BackgroundColor3 = Color3.fromRGB(8, 7, 10)
+sidebar.BorderSizePixel = 0
+sidebar.Parent = mainFrame
+
+local sidebarLine = Instance.new("Frame")
+sidebarLine.Size = UDim2.new(0, 1, 1, 0)
+sidebarLine.Position = UDim2.new(1, -1, 0, 0)
+sidebarLine.BackgroundColor3 = Color3.fromRGB(35, 30, 45)
+sidebarLine.BorderSizePixel = 0
+sidebarLine.Parent = sidebar
+
+-- Logo Title inside Sidebar
+local logoLabel = Instance.new("TextLabel")
+logoLabel.Size = UDim2.new(1, 0, 0, 40)
+logoLabel.BackgroundTransparency = 1
+logoLabel.Text = "INFERNO v5"
+logoLabel.TextColor3 = Color3.fromRGB(150, 100, 255)
+logoLabel.Font = Enum.Font.Code
+logoLabel.TextSize = 15
+logoLabel.Parent = sidebar
+
+-- Pages Views Setup
+local contentArea = Instance.new("Frame")
+contentArea.Size = UDim2.new(1, -120, 1, -10)
+contentArea.Position = UDim2.new(0, 115, 0, 5)
+contentArea.BackgroundTransparency = 1
+contentArea.Parent = mainFrame
+
+local movementPage = Instance.new("ScrollingFrame")
+movementPage.Size = UDim2.new(1, 0, 1, 0)
+movementPage.BackgroundTransparency = 1
+movementPage.CanvasSize = UDim2.new(0, 0, 0, 360)
+movementPage.ScrollBarThickness = 2
+movementPage.Visible = true
+movementPage.Parent = contentArea
+
+local settingsPage = Instance.new("ScrollingFrame")
+settingsPage.Size = UDim2.new(1, 0, 1, 0)
+settingsPage.BackgroundTransparency = 1
+settingsPage.CanvasSize = UDim2.new(0, 0, 0, 300)
+settingsPage.ScrollBarThickness = 2
+settingsPage.Visible = false
+settingsPage.Parent = contentArea
+
+-- Dynamic Layout Generators
+local function applyLayout(parent)
+	local layout = Instance.new("UIListLayout")
+	layout.Padding = UDim.new(0, 6)
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = parent
+end
+applyLayout(movementPage)
+applyLayout(settingsPage)
+
+-- Sidebar Buttons Engine
+local function createTabBtn(name, positionY, targetPage)
+	local tabBtn = Instance.new("TextButton")
+	tabBtn.Size = UDim2.new(1, -10, 0, 32)
+	tabBtn.Position = UDim2.new(0, 5, 0, positionY)
+	tabBtn.BackgroundColor3 = Color3.fromRGB(16, 14, 20)
+	tabBtn.Text = name
+	tabBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+	tabBtn.Font = Enum.Font.SourceSansBold
+	tabBtn.TextSize = 13
+	tabBtn.BorderSizePixel = 0
+	tabBtn.Parent = sidebar
+	
+	local tabCorner = Instance.new("UICorner")
+	tabCorner.CornerRadius = UDim.new(0, 4)
+	tabCorner.Parent = tabBtn
+	
+	tabBtn.MouseButton1Click:Connect(function()
+		movementPage.Visible = false
+		settingsPage.Visible = false
+		targetPage.Visible = true
+	end)
+end
+createTabBtn("Movement", 50, movementPage)
+createTabBtn("Settings", 88, settingsPage)
+
+--------------------------------------------------------------------------------
+-- INTERACTIVE CONTROL SWITCH BUILDER
+--------------------------------------------------------------------------------
+
+local function createPremiumRow(name, parentPage, callback)
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(1, -4, 0, 36)
+	frame.BackgroundColor3 = Color3.fromRGB(18, 16, 22)
+	frame.BorderSizePixel = 0
+	frame.Parent = parentPage
+	
+	local fCorner = Instance.new("UICorner")
+	fCorner.CornerRadius = UDim.new(0, 4)
+	fCorner.Parent = frame
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0.6, 0, 1, 0)
+	label.Position = UDim2.new(0, 10, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = Color3.fromRGB(220, 220, 220)
+	label.Font = Enum.Font.SourceSansSemibold
+	label.TextSize = 13
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = frame
+	
+	local toggle = Instance.new("TextButton")
+	toggle.Size = UDim2.new(0, 44, 0, 20)
+	toggle.Position = UDim2.new(1, -54, 0.5, -10)
+	toggle.BackgroundColor3 = Color3.fromRGB(30, 28, 36)
+	toggle.Text = "OFF"
+	toggle.TextColor3 = Color3.fromRGB(140, 140, 140)
+	toggle.Font = Enum.Font.SourceSansBold
+	toggle.TextSize = 11
+	toggle.Parent = frame
+	
+	local tCorner = Instance.new("UICorner")
+	tCorner.CornerRadius = UDim.new(0, 4)
+	tCorner.Parent = toggle
+	
+	local active = false
+	toggle.MouseButton1Click:Connect(function()
+		active = not active
+		if active then
+			toggle.Text = "ON"
+			toggle.BackgroundColor3 = Color3.fromRGB(120, 75, 230)
+			toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+		else
+			toggle.Text = "OFF"
+			toggle.BackgroundColor3 = Color3.fromRGB(30, 28, 36)
+			toggle.TextColor3 = Color3.fromRGB(140, 140, 140)
+		end
+		callback(active)
+	end)
+end
+
+-- Inject Switches to Movement Page
+createPremiumRow("Enable Flight System", movementPage, function(bool) States.Fly = bool toggleFlightEngine(bool) end)
+createPremiumRow("Noclip Bypass Mode", movementPage, function(bool) States.Noclip = bool end)
+createPremiumRow("Infinite Air Jump", movementPage, function(bool) States.InfJump = bool end)
+
+-- Dropdown System for Settings Page
+local dropBtn = Instance.new("TextButton")
+dropBtn.Size = UDim2.new(1, -4, 0, 34)
+dropBtn.BackgroundColor3 = Color3.fromRGB(18, 16, 22)
+dropBtn.Text = "CHOOSE TARGET PLAYER v"
+dropBtn.TextColor3 = Color3.fromRGB(150, 100, 255)
+dropBtn.Font = Enum.Font.SourceSansBold
+dropBtn.TextSize = 13
+dropBtn.BorderSizePixel = 0
+dropBtn.Parent = settingsPage
+
+local dpContainer = Instance.new("Frame")
+dpContainer.Size = UDim2.new(1, -4, 0, 0)
+dpContainer.BackgroundColor3 = Color3.fromRGB(14, 12, 18)
+dpContainer.ClipsDescendants = true
+dpContainer.BorderSizePixel = 0
+dpContainer.Parent = settingsPage
+local dpList = Instance.new("UIListLayout")
+dpList.Padding = UDim.new(0, 3)
+dpList.Parent = dpContainer
+
+local dpVisible = false
+local function reloadTargets()
+	for _, c in ipairs(dpContainer:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+	local total = 0
+	for _, p in ipairs(playersService:GetPlayers()) do
+		if p ~= localPlayer then
+			total = total + 1
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, 0, 0, 28)
+			btn.BackgroundColor3 = Color3.fromRGB(24, 22, 30)
+			btn.Text = p.Name
+			btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+			btn.Font = Enum.Font.SourceSans
+			btn.TextSize = 13
+			btn.BorderSizePixel = 0
+			btn.Parent = dpContainer
+			
+			btn.MouseButton1Click:Connect(function()
+				States.SelectedPlayer = p
+				dropBtn.Text = "LOCKED: " .. p.Name
+				dpVisible = false
+				dpContainer.Size = UDim2.new(1, -4, 0, 0)
+			end)
+		end
+	end
+	if dpVisible then dpContainer.Size = UDim2.new(1, -4, 0, total * 31) end
+end
+dropBtn.MouseButton1Click:Connect(function() dpVisible = not dpVisible reloadTargets() end)
+
+-- Warp Command Execution Button inside Settings
+local warpBtn = Instance.new("TextButton")
+warpBtn.Size = UDim2.new(1, -4, 0, 36)
+warpBtn.BackgroundColor3 = Color3.fromRGB(120, 75, 230)
+warpBtn.Text = "TELEPORT INSTANTLY TO TARGET"
+warpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+warpBtn.Font = Enum.Font.SourceSansBold
+warpBtn.TextSize = 13
+warpBtn.BorderSizePixel = 0
+warpBtn.Parent = settingsPage
+
+warpBtn.MouseButton1Click:Connect(function()
+	local target = States.SelectedPlayer
+	if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+		local localChar = localPlayer.Character
+		if localChar and localChar:FindFirstChild("HumanoidRootPart") then
+			localChar:PivotTo(target.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0))
+		end
+	end
+end)
+
+--------------------------------------------------------------------------------
+-- FLOATING TOGGLE ICON SYSTEM (ANTI-JOYSTICK COLLISION)
+--------------------------------------------------------------------------------
+
+local floatLogo = Instance.new("TextButton")
+floatLogo.Size = UDim2.new(0, 45, 0, 45)
+floatLogo.Position = UDim2.new(1, -65, 0.5, -22) -- Default posisi melayang di kanan tengah layar
+floatLogo.BackgroundColor3 = Color3.fromRGB(12, 11, 15)
+floatLogo.Text = "🔮"
+floatLogo.TextSize = 18
+floatLogo.Parent = screenGui
+makeElementDraggable(floatLogo)
+
+local floatCorner = Instance.new("UICorner")
+floatCorner.CornerRadius = UDim.new(1, 0) -- Circle form factor
+floatCorner.Parent = floatLogo
+
+local floatStroke = Instance.new("UIStroke")
+floatStroke.Color = Color3.fromRGB(120, 75, 230)
+floatStroke.Thickness = 1.8
+floatStroke.Parent = floatLogo
+
+floatLogo.MouseButton1Click:Connect(function()
+	States.PanelOpen = not States.PanelOpen
+	mainFrame.Visible = States.PanelOpen
+end)
+
+-- Multi-Thread Hooks Re-sync
+playersService.PlayerAdded:Connect(reloadTargets)
+playersService.PlayerRemoving:Connect(reloadTargets)
+localPlayer.CharacterAdded:Connect(function()
+	task.wait(0.2)
+	if States.Fly then toggleFlightEngine(true) end
+end)
+
+print("[OUTPUT] Inferno Premium V5 Omni Interface Injection Complete.")
