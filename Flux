@@ -1,0 +1,312 @@
+--[[
+	---@module GodScriptorUltraPremium
+	---@author GODSCRIPTOR
+	---@description Extended Ultra Panel with Drawing API ESP and Cross-Map Teleport Engine.
+]]
+
+-- Services
+local playersService = game:GetService("Players")
+local runService = game:GetService("RunService")
+local workspace = game:GetService("Workspace")
+local coreGui = game:GetService("CoreGui")
+local userInputService = game:GetService("UserInputService")
+
+-- State Management
+local localPlayer = playersService.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local States = {
+	Fly = false,
+	Noclip = false,
+	InfJump = false,
+	Esp = true, -- Default true biar langsung keliatan pas di-inject
+	FlySpeed = 50,
+	TeleportTarget = ""
+}
+
+local FlyBodyVelocity = nil
+local FlyBodyGyro = nil
+local Connections = {}
+local EspObjects = {}
+
+--------------------------------------------------------------------------------
+-- CORE EXPLOIT MECHANICS (FLY, NOCLIP, INFJUMP)
+--------------------------------------------------------------------------------
+
+Connections.InfJump = userInputService.JumpRequest:Connect(function()
+	if States.InfJump and localPlayer.Character then
+		local humanoid = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+		if humanoid then humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end
+end)
+
+Connections.Noclip = runService.Stepped:Connect(function()
+	if States.Noclip and localPlayer.Character then
+		for _, part in ipairs(localPlayer.Character:GetDescendants()) do
+			if part:IsA("BasePart") and part.CanCollide then
+				part.CanCollide = false
+			end
+		end
+	end
+end)
+
+local function toggleFlightEngine(enable)
+	local char = localPlayer.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+	local root = char.HumanoidRootPart
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	
+	if enable then
+		FlyBodyVelocity = Instance.new("BodyVelocity")
+		FlyBodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+		FlyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+		FlyBodyVelocity.Parent = root
+		
+		FlyBodyGyro = Instance.new("BodyGyro")
+		FlyBodyGyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+		FlyBodyGyro.CFrame = root.CFrame
+		FlyBodyGyro.Parent = root
+		
+		if hum then hum.PlatformStand = true end
+		
+		Connections.FlightLoop = runService.RenderStepped:Connect(function()
+			if not States.Fly or not localPlayer.Character then return end
+			local moveDirection = hum and hum.MoveDirection or Vector3.new(0,0,0)
+			local camCFrame = camera.CFrame
+			
+			if moveDirection.Magnitude > 0 then
+				local dir = (camCFrame.LookVector * moveDirection.Z) + (camCFrame.RightVector * moveDirection.X)
+				FlyBodyVelocity.Velocity = dir.Unit * States.FlySpeed
+			else
+				FlyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+			end
+			FlyBodyGyro.CFrame = camCFrame
+		end)
+	else
+		if Connections.FlightLoop then Connections.FlightLoop:Disconnect() end
+		if FlyBodyVelocity then FlyBodyVelocity:Destroy() end
+		if FlyBodyGyro then FlyBodyGyro:Destroy() end
+		if hum then hum.PlatformStand = false end
+	end
+end
+
+--------------------------------------------------------------------------------
+-- HIGH-PERFORMANCE DRAWING ESP SYSTEM
+--------------------------------------------------------------------------------
+
+local function createEsp(player)
+	if player == localPlayer then return end
+	
+	local box = Drawing.new("Square")
+	box.Visible = false
+	box.Color = Color3.fromRGB(0, 255, 150)
+	box.Thickness = 1.5
+	box.Filled = false
+	
+	local name = Drawing.new("Text")
+	name.Visible = false
+	name.Color = Color3.fromRGB(255, 255, 255)
+	name.Size = 14
+	name.Center = true
+	name.Outline = true
+	
+	EspObjects[player] = {Box = box, Name = name}
+	
+	local conn
+	conn = runService.RenderStepped:Connect(function()
+		if not States.Esp or not player.Parent or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+			box.Visible = false
+			name.Visible = false
+			if not player.Parent then
+				box:Remove()
+				name:Remove()
+				EspObjects[player] = nil
+				conn:Disconnect()
+			end
+			return
+		end
+		
+		local rootPart = player.Character.HumanoidRootPart
+		local pos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
+		
+		if onScreen then
+			-- Kalkulasi dimensi Box berdasarkan jarak kamera
+			local scale = 1000 / pos.Z
+			local w, h = 3 * scale, 4.5 * scale
+			
+			box.Position = Vector2.new(pos.X - w/2, pos.Y - h/2)
+			box.Size = Vector2.new(w, h)
+			box.Visible = true
+			
+			name.Position = Vector2.new(pos.X, pos.Y - h/2 - 15)
+			name.Text = player.Name .. " [" .. math.round(pos.Z) .. "m]"
+			name.Visible = true
+		else
+			box.Visible = false
+			name.Visible = false
+		end
+	end)
+end
+
+for _, p in ipairs(playersService:GetPlayers()) do createEsp(p) end
+playersService.PlayerAdded:Connect(createEsp)
+
+--------------------------------------------------------------------------------
+-- BYPASS TELEPORT ENGINE
+--------------------------------------------------------------------------------
+
+local function teleportToPlayer(targetName)
+	if targetName == "" then return end
+	local targetPlayer = nil
+	
+	for _, p in ipairs(playersService:GetPlayers()) do
+		if string.sub(string.lower(p.Name), 1, #targetName) == string.lower(targetName) then
+			targetPlayer = p
+			break
+		end
+	end
+	
+	if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+		local localChar = localPlayer.Character
+		if localChar and localChar:FindFirstChild("HumanoidRootPart") then
+			-- PivotTo bypass anticheat rubberbanding di beberapa game engine
+			localChar:PivotTo(targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 2, 0))
+			print("[TELEPORT] Swapped position to: " .. targetPlayer.Name)
+		end
+	end
+end
+
+--------------------------------------------------------------------------------
+-- ULTRA PANEL GUI ARCHITECTURE (EXTENDED OVERLAY)
+--------------------------------------------------------------------------------
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GodScriptor_Ultra"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = getgui and getgui() or coreGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 300, 0, 380) -- Lebar ditambah dikit buat space menu baru
+mainFrame.Position = UDim2.new(0.5, -150, 0.25, -190)
+mainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(0, 255, 150) -- Cyberpunk Lime Neon Theme
+stroke.Thickness = 2
+stroke.Parent = mainFrame
+
+local header = Instance.new("TextLabel")
+header.Size = UDim2.new(1, 0, 0, 40)
+header.BackgroundTransparency = 1
+header.Text = "⚡ GODSCRIPTOR ULTRA MATRIX ⚡"
+header.TextColor3 = Color3.fromRGB(255, 255, 255)
+header.Font = Enum.Font.Code
+header.TextSize = 14
+header.Parent = mainFrame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 8)
+listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local container = Instance.new("Frame")
+container.Size = UDim2.new(1, -24, 1, -50)
+container.Position = UDim2.new(0, 12, 0, 40)
+container.BackgroundTransparency = 1
+container.Parent = mainFrame
+listLayout.Parent = container
+
+local function createToggle(name, default, layoutOrder, callback)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, 0, 0, 36)
+	btn.BackgroundColor3 = default and Color3.fromRGB(25, 35, 25) or Color3.fromRGB(20, 20, 25)
+	btn.Text = name .. (default and " : ACTIVE" or " : OFF")
+	btn.TextColor3 = default and Color3.fromRGB(100, 242, 100) or Color3.fromRGB(242, 100, 100)
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 14
+	btn.LayoutOrder = layoutOrder
+	btn.Parent = container
+	
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 6)
+	btnCorner.Parent = btn
+	
+	local active = default
+	btn.MouseButton1Click:Connect(function()
+		active = not active
+		if active then
+			btn.Text = name .. " : ACTIVE"
+			btn.TextColor3 = Color3.fromRGB(100, 242, 100)
+			btn.BackgroundColor3 = Color3.fromRGB(25, 35, 25)
+		else
+			btn.Text = name .. " : OFF"
+			btn.TextColor3 = Color3.fromRGB(242, 100, 100)
+			btn.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+		end
+		callback(active)
+	end)
+end
+
+-- Render Toggles (Core + New ESP Toggle)
+createToggle("FLIGHT CORE ENGINE", false, 1, function(bool) States.Fly = bool toggleFlightEngine(bool) end)
+createToggle("NOCLIP OVERRIDE", false, 2, function(bool) States.Noclip = bool end)
+createToggle("INFINITE JUMP SYSTEM", false, 3, function(bool) States.InfJump = bool end)
+createToggle("PLAYER VISUAL ESP", true, 4, function(bool) States.Esp = bool end)
+
+-- Teleport Component Area
+local tpBox = Instance.new("TextBox")
+tpBox.Size = UDim2.new(1, 0, 0, 36)
+tpBox.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+tpBox.PlaceholderText = "Target Player Name..."
+tpBox.Text = ""
+tpBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+tpBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
+tpBox.Font = Enum.Font.SourceSans
+tpBox.TextSize = 14
+tpBox.LayoutOrder = 5
+tpBox.Parent = container
+
+local tpBoxCorner = Instance.new("UICorner")
+tpBoxCorner.CornerRadius = UDim.new(0, 6)
+tpBoxCorner.Parent = tpBox
+
+local tpBtn = Instance.new("TextButton")
+tpBtn.Size = UDim2.new(1, 0, 0, 36)
+tpBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+tpBtn.Text = "EXECUTE TELEPORT"
+tpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+tpBtn.Font = Enum.Font.SourceSansBold
+tpBtn.TextSize = 14
+tpBtn.LayoutOrder = 6
+tpBtn.Parent = container
+
+local tpBtnCorner = Instance.new("UICorner")
+tpBtnCorner.CornerRadius = UDim.new(0, 6)
+tpBtnCorner.Parent = tpBtn
+
+tpBox:GetPropertiesChangedSignal("Text"):Connect(function()
+	States.TeleportTarget = tpBox.Text
+end)
+
+tpBtn.MouseButton1Click:Connect(function()
+	teleportToPlayer(States.TeleportTarget)
+end)
+
+-- Character Tracker Refresh
+localPlayer.CharacterAdded:Connect(function(newChar)
+	if States.Fly then
+		toggleFlightEngine(false)
+		task.wait(0.1)
+		toggleFlightEngine(true)
+	end
+end)
+
+print("[OUTPUT] GodScriptor Matrix UI Injection Engine Complete.")
