@@ -1,0 +1,354 @@
+--[[
+	---@module InfernoHub_Premium_v4
+	---@author GODSCRIPTOR
+	---@description Re-engineered Vector Flight Engine with Inferno Premium Minimalist Interface & UI Toggle.
+]]
+
+-- Services
+local playersService = game:GetService("Players")
+local runService = game:GetService("RunService")
+local workspace = game:GetService("Workspace")
+local coreGui = game:GetService("CoreGui")
+local userInputService = game:GetService("UserInputService")
+
+-- Configuration & States (Inferno Settings Mapping)
+local localPlayer = playersService.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local States = {
+	Fly = false,
+	Noclip = false,
+	InfJump = false,
+	Esp = false,
+	WalkSpeedActive = false,
+	
+	WalkSpeed = 60,
+	FlySpeed = 100, -- Default Inferno Hub mapping
+	JumpPower = 120,
+	SelectedPlayer = nil
+}
+
+local FlyBodyVelocity = nil
+local FlyBodyGyro = nil
+local Connections = {}
+
+--------------------------------------------------------------------------------
+-- CORE FIXES & MECHANICS ENGINE (ALL IN ONE)
+--------------------------------------------------------------------------------
+
+-- VECTOR CALIBRATION FIX: Z-Vector inverted calculation to solve backward flying bug
+local function cleanFlightEngine()
+	if Connections.FlightLoop then Connections.FlightLoop:Disconnect() Connections.FlightLoop = nil end
+	if FlyBodyVelocity then FlyBodyVelocity:Destroy() FlyBodyVelocity = nil end
+	if FlyBodyGyro then FlyBodyGyro:Destroy() FlyBodyGyro = nil end
+	local char = localPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then hum.PlatformStand = false end
+end
+
+local function toggleFlightEngine(enable)
+	cleanFlightEngine()
+	if not enable then return end
+	
+	local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+	local root = char:WaitForChild("HumanoidRootPart", 5)
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	
+	if not root or not hum then return end
+	hum.PlatformStand = true
+	
+	FlyBodyVelocity = Instance.new("BodyVelocity")
+	FlyBodyVelocity.MaxForce = Vector3.new(9e5, 9e5, 9e5)
+	FlyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+	FlyBodyVelocity.Parent = root
+	
+	FlyBodyGyro = Instance.new("BodyGyro")
+	FlyBodyGyro.MaxTorque = Vector3.new(9e5, 9e5, 9e5)
+	FlyBodyGyro.CFrame = root.CFrame
+	FlyBodyGyro.Parent = root
+	
+	Connections.FlightLoop = runService.Heartbeat:Connect(function()
+		if not States.Fly or not localPlayer.Character or not root.Parent then 
+			cleanFlightEngine()
+			return 
+		end
+		
+		local moveDirection = hum.MoveDirection
+		local camCFrame = camera.CFrame
+		
+		if moveDirection.Magnitude > 0 then
+			-- BUG FIX: Mengubah perkalian vector minus (-) menjadi standard vector forward agar control analog/W tidak terbalik
+			local lookVector = camCFrame.LookVector
+			local rightVector = camCFrame.RightVector
+			
+			-- Re-mapping directional coordinates based on modern viewport matrices
+			local forwardDirection = lookVector * (-moveDirection.Z) + rightVector * moveDirection.X
+			if moveDirection.Z < 0 then
+				forwardDirection = lookVector * (math.abs(moveDirection.Z)) + rightVector * moveDirection.X
+			elseif moveDirection.Z > 0 then
+				forwardDirection = lookVector * (-moveDirection.Z) + rightVector * moveDirection.X
+			end
+			
+			FlyBodyVelocity.Velocity = forwardDirection.Unit * States.FlySpeed
+		else
+			FlyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+		end
+		FlyBodyGyro.CFrame = camCFrame
+	end)
+end
+
+-- Infinite Jump Hook
+Connections.InfJump = userInputService.JumpRequest:Connect(function()
+	if States.InfJump and localPlayer.Character then
+		local humanoid = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+		if humanoid then humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end
+end)
+
+-- Noclip Layer Loop
+Connections.Noclip = runService.Stepped:Connect(function()
+	if States.Noclip and localPlayer.Character then
+		for _, part in ipairs(localPlayer.Character:GetDescendants()) do
+			if part:IsA("BasePart") and part.CanCollide then
+				part.CanCollide = false
+			end
+		end
+	end
+end)
+
+--------------------------------------------------------------------------------
+-- INFERNO HUB GOLDEN DARK DESIGN INTERFACE
+--------------------------------------------------------------------------------
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "InfernoHub_V4"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = getgui and getgui() or coreGui
+
+-- Main Luxury Board
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 320, 0, 440)
+mainFrame.Position = UDim2.new(0.5, -160, 0.2, -220)
+mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local borderStroke = Instance.new("UIStroke")
+borderStroke.Color = Color3.fromRGB(212, 163, 89) -- Inferno Hub Premium Gold Accent
+borderStroke.Thickness = 1.5
+borderStroke.Parent = mainFrame
+
+-- Title Banner
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 45)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "👑 INFERNO HUB v4.0 [PREMIUM]"
+titleLabel.TextColor3 = Color3.fromRGB(212, 163, 89)
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.TextSize = 16
+titleLabel.Parent = mainFrame
+
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -20, 1, -60)
+scrollFrame.Position = UDim2.new(0, 10, 0, 50)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 500)
+scrollFrame.ScrollBarThickness = 3
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(212, 163, 89)
+scrollFrame.Parent = mainFrame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 8)
+listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = scrollFrame
+
+-- Builder Function for Inferno Switches
+local function createInfernoSwitch(name, layoutOrder, callback)
+	local rowFrame = Instance.new("Frame")
+	rowFrame.Size = UDim2.new(1, -6, 0, 42)
+	rowFrame.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+	rowFrame.BorderSizePixel = 0
+	rowFrame.LayoutOrder = layoutOrder
+	rowFrame.Parent = scrollFrame
+	
+	local rCorner = Instance.new("UICorner")
+	rCorner.CornerRadius = UDim.new(0, 6)
+	rCorner.Parent = rowFrame
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0.6, 0, 1, 0)
+	label.Position = UDim2.new(0, 12, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = Color3.fromRGB(230, 230, 230)
+	label.Font = Enum.Font.SourceSansSemibold
+	label.TextSize = 14
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = rowFrame
+	
+	local toggleBtn = Instance.new("TextButton")
+	toggleBtn.Size = UDim2.new(0, 50, 0, 24)
+	toggleBtn.Position = UDim2.new(1, -62, 0.5, -12)
+	toggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	toggleBtn.Text = "OFF"
+	toggleBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+	toggleBtn.Font = Enum.Font.SourceSansBold
+	toggleBtn.TextSize = 12
+	toggleBtn.Parent = rowFrame
+	
+	local tCorner = Instance.new("UICorner")
+	tCorner.CornerRadius = UDim.new(0, 12)
+	tCorner.Parent = toggleBtn
+	
+	local active = false
+	toggleBtn.MouseButton1Click:Connect(function()
+		active = not active
+		if active then
+			toggleBtn.Text = "ON"
+			toggleBtn.BackgroundColor3 = Color3.fromRGB(212, 163, 89)
+			toggleBtn.TextColor3 = Color3.fromRGB(18, 18, 18)
+		else
+			toggleBtn.Text = "OFF"
+			toggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+			toggleBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+		end
+		callback(active)
+	end)
+end
+
+-- Setup Functional Toggles
+createInfernoSwitch("Fly System (Fixed Vector)", 1, function(bool) States.Fly = bool toggleFlightEngine(bool) end)
+createInfernoSwitch("Noclip Wall Phase", 2, function(bool) States.Noclip = bool end)
+createInfernoSwitch("Infinite Jump Core", 3, function(bool) States.InfJump = bool end)
+
+-- Dropdown Selector Component for Targets
+local dropdownMain = Instance.new("TextButton")
+dropdownMain.Size = UDim2.new(1, -6, 0, 38)
+dropdownMain.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+dropdownMain.Text = "SELECT TARGET PLAYER v"
+dropdownMain.TextColor3 = Color3.fromRGB(212, 163, 89)
+dropdownMain.Font = Enum.Font.SourceSansBold
+dropdownMain.TextSize = 13
+dropdownMain.LayoutOrder = 4
+dropdownMain.Parent = scrollFrame
+
+local ddCorner = Instance.new("UICorner")
+ddCorner.CornerRadius = UDim.new(0, 6)
+ddCorner.Parent = dropdownMain
+
+local dropdownContainer = Instance.new("Frame")
+dropdownContainer.Size = UDim2.new(1, -6, 0, 0)
+dropdownContainer.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+dropdownContainer.ClipsDescendants = true
+dropdownContainer.LayoutOrder = 5
+dropdownContainer.Parent = scrollFrame
+
+local ddListLayout = Instance.new("UIListLayout")
+ddListLayout.Padding = UDim.new(0, 4)
+ddListLayout.Parent = dropdownContainer
+
+local ddVisible = false
+local function refreshDropdown()
+	for _, child in ipairs(dropdownContainer:GetChildren()) do
+		if child:IsA("TextButton") then child:Destroy() end
+	end
+	local count = 0
+	for _, p in ipairs(playersService:GetPlayers()) do
+		if p ~= localPlayer then
+			count = count + 1
+			local pBtn = Instance.new("TextButton")
+			pBtn.Size = UDim2.new(1, 0, 0, 30)
+			pBtn.BackgroundColor3 = Color3.fromRGB(33, 33, 33)
+			pBtn.Text = p.Name
+			pBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+			pBtn.Font = Enum.Font.SourceSans
+			pBtn.TextSize = 13
+			pBtn.Parent = dropdownContainer
+			
+			pBtn.MouseButton1Click:Connect(function()
+				States.SelectedPlayer = p
+				dropdownMain.Text = "TARGET: " .. p.Name
+				ddVisible = false
+				dropdownContainer.Size = UDim2.new(1, -6, 0, 0)
+			end)
+		end
+	end
+	if ddVisible then dropdownContainer.Size = UDim2.new(1, -6, 0, count * 34) end
+end
+
+dropdownMain.MouseButton1Click:Connect(function()
+	ddVisible = not ddVisible
+	refreshDropdown()
+end)
+
+-- Teleport Warp Master Trigger
+local warpBtn = Instance.new("TextButton")
+warpBtn.Size = UDim2.new(1, -6, 0, 40)
+warpBtn.BackgroundColor3 = Color3.fromRGB(212, 163, 89)
+warpBtn.Text = "WARP TO SELECTED TARGET"
+warpBtn.TextColor3 = Color3.fromRGB(18, 18, 18)
+warpBtn.Font = Enum.Font.SourceSansBold
+warpBtn.TextSize = 14
+warpBtn.LayoutOrder = 6
+warpBtn.Parent = scrollFrame
+
+local wBtnCorner = Instance.new("UICorner")
+wBtnCorner.CornerRadius = UDim.new(0, 6)
+wBtnCorner.Parent = warpBtn
+
+warpBtn.MouseButton1Click:Connect(function()
+	local target = States.SelectedPlayer
+	if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+		local localChar = localPlayer.Character
+		if localChar and localChar:FindFirstChild("HumanoidRootPart") then
+			localChar:PivotTo(target.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0))
+		end
+	end
+end)
+
+--------------------------------------------------------------------------------
+-- HIDE & SHOW FLOATING BUTTON OVERLAY
+--------------------------------------------------------------------------------
+
+local hideButton = Instance.new("TextButton")
+hideButton.Size = UDim2.new(0, 110, 0, 35)
+hideButton.Position = UDim2.new(1, -130, 1, -50) -- Tarik ke pojok kanan bawah layar
+hideButton.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+hideButton.Text = "Tap to close"
+hideButton.TextColor3 = Color3.fromRGB(212, 163, 89)
+hideButton.Font = Enum.Font.SourceSansBold
+hideButton.TextSize = 13
+hideButton.Parent = screenGui
+
+local hbCorner = Instance.new("UICorner")
+hbCorner.CornerRadius = UDim.new(0, 18)
+hbCorner.Parent = hideButton
+
+local hbStroke = Instance.new("UIStroke")
+hbStroke.Color = Color3.fromRGB(212, 163, 89)
+hbStroke.Thickness = 1
+hbStroke.Parent = hideButton
+
+local uiVisible = true
+hideButton.MouseButton1Click:Connect(function()
+	uiVisible = not uiVisible
+	mainFrame.Visible = uiVisible
+	hideButton.Text = uiVisible and "Tap to close" or "Tap to open"
+end)
+
+-- Real-time Connection Hooks
+playersService.PlayerAdded:Connect(refreshDropdown)
+playersService.PlayerRemoving:Connect(refreshDropdown)
+localPlayer.CharacterAdded:Connect(function()
+	task.wait(0.2)
+	if States.Fly then toggleFlightEngine(true) end
+end)
+
+print("[OUTPUT] Inferno Hub Layout Compilation Engaged Successfully.")
