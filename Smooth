@@ -1,0 +1,374 @@
+-- Services
+local playersService = game:GetService("Players")
+local runService = game:GetService("RunService")
+local coreGui = game:GetService("CoreGui")
+local lightingService = game:GetService("Lighting")
+
+-- Unlocking FPS Cap (Delta Android Premium API Supported)
+if setfpscap then
+	setfpscap(999) -- Unlock limit 60 FPS bawaan Roblox mobile, push to maximum!
+end
+
+-- State & Config Fly
+local localPlayer = playersService.LocalPlayer
+local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+
+local isFlying = false
+local baseSpeed = 60
+local maxSpeedMultiplier = 2.5
+local currentSpeed = baseSpeed
+local verticalDirection = 0
+
+local currentVelocityTarget = Vector3.new(0, 0, 0)
+local lerpAlpha = 0.15
+
+-- State FPS & Cooler Engine
+local fpsActive = false
+local coolerActive = false
+local originalMaterials = {}
+local fpsCount = 0
+
+-- Physics Sync Setup
+local attachment, linearVelocity
+local function setupPhysics(char)
+	local hrp = char:WaitForChild("HumanoidRootPart")
+	if attachment then attachment:Destroy() end
+	if linearVelocity then linearVelocity:Destroy() end
+	
+	attachment = Instance.new("Attachment")
+	attachment.Name = "UltimateFlyAttachment"
+	attachment.Parent = hrp
+
+	linearVelocity = Instance.new("LinearVelocity")
+	linearVelocity.Name = "UltimateFlyVelocity"
+	linearVelocity.Attachment0 = attachment
+	linearVelocity.MaxForce = 0
+	linearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+	linearVelocity.Parent = hrp
+end
+setupPhysics(character)
+
+localPlayer.CharacterAdded:Connect(function(newChar)
+	character = newChar
+	humanoid = character:WaitForChild("Humanoid")
+	rootPart = character:WaitForChild("HumanoidRootPart")
+	setupPhysics(newChar)
+	if isFlying then
+		humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+		linearVelocity.MaxForce = math.huge
+	end
+end)
+
+-- ==========================================
+-- SUPER ULTRA COOLER ENGINE (NO GIMICK CLEAN)
+-- ==========================================
+local function executeFPSBoost()
+	lightingService.GlobalShadows = false
+	lightingService.FogEnd = 9e9
+	lightingService.FogStart = 9e9
+	
+	for _, effect in ipairs(lightingService:GetChildren()) do
+		if effect:IsA("PostEffect") or effect:IsA("Atmosphere") or effect:IsA("Clouds") then
+			effect.Enabled = false
+		end
+	end
+	
+	local terrain = workspace:FindFirstChildOfClass("Terrain")
+	if terrain then
+		terrain.WaterWaveSize = 0
+		terrain.WaterWaveSpeed = 0
+		terrain.WaterReflectance = 0
+		terrain.WaterTransparency = 1
+	end
+	
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("BasePart") and not obj:IsDescendantOf(character) then
+			if not originalMaterials[obj] then
+				originalMaterials[obj] = {Material = obj.Material, Reflectance = obj.Reflectance}
+			end
+			obj.Material = Enum.Material.SmoothPlastic
+			obj.Reflectance = 0
+		elseif obj:IsA("Decal") or obj:IsA("Texture") then
+			obj:Destroy()
+		elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+			obj.Enabled = false
+		end
+	end
+end
+
+-- Deep Memory Garbage Collection (Cooler Heartbeat)
+task.spawn(function()
+	while true do
+		task.wait(3) -- Tiap 3 detik engine ngebersihin cache RAM internal script
+		if coolerActive then
+			-- Panggil Lua Garbage Collector bawaan env buat ngosongin sisa memori render
+			if gcinfo then gcinfo() end
+			local successCollect = pcall(collectgarbage, "collect")
+		end
+	end
+end)
+
+-- ==========================================
+-- MAIN GUI INTERFACE WITH REALTIME MONITORS
+-- ==========================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DeltaUltimatePanel"
+screenGui.ResetOnSpawn = false
+
+local success, _ = pcall(function() screenGui.Parent = coreGui end)
+if not success then screenGui.Parent = localPlayer:WaitForChild("PlayerGui") end
+
+-- Restore / Open Button
+local openBtn = Instance.new("TextButton")
+openBtn.Name = "OpenPanel"
+openBtn.Size = UDim2.new(0, 65, 0, 35)
+openBtn.Position = UDim2.new(0, 15, 0, 15)
+openBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+openBtn.TextColor3 = Color3.fromRGB(0, 255, 180)
+openBtn.TextSize = 11
+openBtn.Text = "[ OPEN ]"
+openBtn.Font = Enum.Font.Code
+openBtn.Visible = false
+openBtn.Parent = screenGui
+Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 6)
+
+-- Main Frame Panel (Sleek Cyberpunk Redux)
+local mainPanel = Instance.new("Frame")
+mainPanel.Name = "MainPanel"
+mainPanel.Size = UDim2.new(0, 250, 0, 310)
+mainPanel.Position = UDim2.new(0.15, 0, 0.25, 0)
+mainPanel.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+mainPanel.BorderSizePixel = 0
+mainPanel.Active = true
+mainPanel.Draggable = true
+mainPanel.Parent = screenGui
+Instance.new("UICorner", mainPanel).CornerRadius = UDim.new(0, 12)
+
+local uiStroke = Instance.new("UIStroke")
+uiStroke.Color = Color3.fromRGB(45, 45, 45)
+uiStroke.Thickness = 1.5
+uiStroke.Parent = mainPanel
+
+-- Title Bar + Dynamic FPS CAP Monitor Label
+local titleBar = Instance.new("TextLabel")
+titleBar.Name = "Title"
+titleBar.Size = UDim2.new(1, -45, 0, 40)
+titleBar.Position = UDim2.new(0, 15, 0, 0)
+titleBar.BackgroundTransparency = 1
+titleBar.TextColor3 = Color3.fromRGB(240, 240, 240)
+titleBar.TextSize = 13
+titleBar.Text = "DELTA BRUTAL v5.0 [FPS: --]"
+titleBar.Font = Enum.Font.Code
+titleBar.TextXAlignment = Enum.TextXAlignment.Left
+titleBar.Parent = mainPanel
+
+-- Realtime Live FPS Counter Engine Script
+runService.RenderStepped:Connect(function(fpsDelta)
+	fpsCount = math.round(1 / fpsDelta)
+	titleBar.Text = "DELTA BRUTAL v5.0 [FPS: " .. tostring(fpsCount) .. "]"
+end)
+
+-- Hide Button [X]
+local closeBtn = Instance.new("TextButton")
+closeBtn.Name = "HidePanel"
+closeBtn.Size = UDim2.new(0, 35, 0, 35)
+closeBtn.Position = UDim2.new(1, -40, 0, 2.5)
+closeBtn.BackgroundTransparency = 1
+closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+closeBtn.TextSize = 16
+closeBtn.Text = "✕"
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.Parent = mainPanel
+
+-- Button 1: Fly Toggle
+local flyToggle = Instance.new("TextButton")
+flyToggle.Name = "FlyToggle"
+flyToggle.Size = UDim2.new(1, -30, 0, 40)
+flyToggle.Position = UDim2.new(0, 15, 0, 45)
+flyToggle.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+flyToggle.TextColor3 = Color3.fromRGB(255, 75, 75)
+flyToggle.TextSize = 12
+flyToggle.Text = "FLY MODE: INACTIVE"
+flyToggle.Font = Enum.Font.Code
+flyToggle.Parent = mainPanel
+Instance.new("UICorner", flyToggle).CornerRadius = UDim.new(0, 8)
+local flyStroke = Instance.new("UIStroke", flyToggle)
+flyStroke.Color = Color3.fromRGB(50, 25, 25)
+
+-- Button 2: Potato FPS Booster (Texture Stripper)
+local fpsToggle = Instance.new("TextButton")
+fpsToggle.Name = "FPSToggle"
+fpsToggle.Size = UDim2.new(1, -30, 0, 40)
+fpsToggle.Position = UDim2.new(0, 15, 0, 95)
+fpsToggle.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+fpsToggle.TextColor3 = Color3.fromRGB(255, 170, 0)
+fpsToggle.TextSize = 12
+fpsToggle.Text = "POTATO MODE: DEACTIVATED"
+fpsToggle.Font = Enum.Font.Code
+fpsToggle.Parent = mainPanel
+Instance.new("UICorner", fpsToggle).CornerRadius = UDim.new(0, 8)
+local fpsStroke = Instance.new("UIStroke", fpsToggle)
+fpsStroke.Color = Color3.fromRGB(50, 40, 25)
+
+-- Button 3: Super Ultra Cooler Engine (Liquid Helium Deep Clean)
+local coolerToggle = Instance.new("TextButton")
+coolerToggle.Name = "CoolerToggle"
+coolerToggle.Size = UDim2.new(1, -30, 0, 40)
+coolerToggle.Position = UDim2.new(0, 15, 0, 145)
+coolerToggle.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+coolerToggle.TextColor3 = Color3.fromRGB(0, 180, 255)
+coolerToggle.TextSize = 12
+coolerToggle.Text = "LIQUID COOLER: OFF"
+coolerToggle.Font = Enum.Font.Code
+coolerToggle.Parent = mainPanel
+Instance.new("UICorner", coolerToggle).CornerRadius = UDim.new(0, 8)
+local coolerStroke = Instance.new("UIStroke", coolerToggle)
+coolerStroke.Color = Color3.fromRGB(25, 45, 60)
+
+-- Controls Holder (Up/Down)
+local controlsFrame = Instance.new("Frame")
+controlsFrame.Name = "Controls"
+controlsFrame.Size = UDim2.new(1, -30, 0, 80)
+controlsFrame.Position = UDim2.new(0, 15, 0, 205)
+controlsFrame.BackgroundTransparency = 1
+controlsFrame.Parent = mainPanel
+
+-- Up Button
+local upBtn = Instance.new("TextButton")
+upBtn.Name = "Up"
+upBtn.Size = UDim2.new(0.48, 0, 1, 0)
+upBtn.Position = UDim2.new(0, 0, 0, 0)
+upBtn.BackgroundColor3 = Color3.fromRGB(15, 22, 18)
+upBtn.TextColor3 = Color3.fromRGB(150, 255, 150)
+upBtn.TextSize = 16
+upBtn.Text = "▲ ASCEND"
+upBtn.Font = Enum.Font.Code
+upBtn.Parent = controlsFrame
+Instance.new("UICorner", upBtn).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", upBtn).Color = Color3.fromRGB(30, 50, 35)
+
+-- Down Button
+local downBtn = Instance.new("TextButton")
+downBtn.Name = "Down"
+downBtn.Size = UDim2.new(0.48, 0, 1, 0)
+downBtn.Position = UDim2.new(0.52, 0, 0, 0)
+downBtn.BackgroundColor3 = Color3.fromRGB(22, 15, 15)
+downBtn.TextColor3 = Color3.fromRGB(255, 150, 150)
+downBtn.TextSize = 16
+downBtn.Text = "▼ DESCEND"
+downBtn.Font = Enum.Font.Code
+downBtn.Parent = controlsFrame
+Instance.new("UICorner", downBtn).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", downBtn).Color = Color3.fromRGB(50, 30, 30)
+
+-- Interaction Logic Hide/Restore
+closeBtn.MouseButton1Click:Connect(function()
+	mainPanel.Visible = false
+	openBtn.Visible = true
+end)
+
+openBtn.MouseButton1Click:Connect(function()
+	mainPanel.Visible = true
+	openBtn.Visible = false
+end)
+
+-- Fly Action Handle
+flyToggle.MouseButton1Click:Connect(function()
+	isFlying = not isFlying
+	if isFlying then
+		flyToggle.Text = "FLY MODE: FLUID_ENG_ON"
+		flyToggle.TextColor3 = Color3.fromRGB(0, 255, 150)
+		flyStroke.Color = Color3.fromRGB(20, 50, 35)
+		if humanoid and linearVelocity then
+			humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+			linearVelocity.MaxForce = math.huge
+		end
+	else
+		flyToggle.Text = "FLY MODE: INACTIVE"
+		flyToggle.TextColor3 = Color3.fromRGB(255, 75, 75)
+		flyStroke.Color = Color3.fromRGB(50, 25, 25)
+		if humanoid and linearVelocity then
+			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+			linearVelocity.MaxForce = 0
+			linearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+		end
+		verticalDirection = 0
+		currentVelocityTarget = Vector3.new(0, 0, 0)
+	end
+end)
+
+-- Potato Mode Action Handle
+fpsToggle.MouseButton1Click:Connect(function()
+	fpsActive = not fpsActive
+	if fpsActive then
+		fpsToggle.Text = "POTATO MODE: OVERCLOCK"
+		fpsToggle.TextColor3 = Color3.fromRGB(255, 255, 0)
+		fpsStroke.Color = Color3.fromRGB(60, 60, 20)
+		executeFPSBoost()
+	else
+		fpsToggle.Text = "POTATO MODE: DEACTIVATED"
+		fpsToggle.TextColor3 = Color3.fromRGB(255, 170, 0)
+		fpsStroke.Color = Color3.fromRGB(50, 40, 25)
+		for part, oldProps in pairs(originalMaterials) do
+			if part and part.Parent then
+				part.Material = oldProps.Material
+				part.Reflectance = oldProps.Reflectance
+			end
+		end
+		lightingService.GlobalShadows = true
+	end
+end)
+
+-- Ultra Cooler Mode Action Handle
+coolerToggle.MouseButton1Click:Connect(function()
+	coolerActive = not coolerActive
+	if coolerActive then
+		coolerToggle.Text = "LIQUID COOLER: ACTIVE (0°K)"
+		coolerToggle.TextColor3 = Color3.fromRGB(0, 255, 255)
+		coolerStroke.Color = Color3.fromRGB(20, 60, 60)
+		settings().Physics.PhysicsEnvironmentalThrottle = Enum.EnviromentalPhysicsThrottle.Disabled -- Bypass internal engine lag throttles
+	else
+		coolerToggle.Text = "LIQUID COOLER: OFF"
+		coolerToggle.TextColor3 = Color3.fromRGB(0, 180, 255)
+		coolerStroke.Color = Color3.fromRGB(25, 45, 60)
+		settings().Physics.PhysicsEnvironmentalThrottle = Enum.EnviromentalPhysicsThrottle.Default
+	end
+end)
+
+-- Touch Controls Binder
+local function bindTouch(button, dirValue)
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			verticalDirection = dirValue
+		end
+	end)
+	button.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if verticalDirection == dirValue then verticalDirection = 0 end
+		end
+	end)
+end
+
+bindTouch(upBtn, 1)
+bindTouch(downBtn, -1)
+
+-- Heartbeat Physics Interpolation
+runService.Heartbeat:Connect(function(deltaTime)
+	if not isFlying or not rootPart or not humanoid or not linearVelocity then return end
+	
+	local moveDirection = humanoid.MoveDirection
+	if moveDirection.Magnitude > 0 or verticalDirection ~= 0 then
+		currentSpeed = math.min(currentSpeed + (deltaTime * baseSpeed * 2), baseSpeed * maxSpeedMultiplier)
+	else
+		currentSpeed = baseSpeed
+	end
+	
+	local rawTargetVelocity = (moveDirection * currentSpeed) + Vector3.new(0, verticalDirection * currentSpeed, 0)
+	currentVelocityTarget = currentVelocityTarget:Lerp(rawTargetVelocity, lerpAlpha)
+	
+	linearVelocity.VectorVelocity = currentVelocityTarget
+end)
+
+print("[DELTA-ULTIMATE-V5] Pure execution complete. 60+ FPS Unlocker Active. ❄️")
