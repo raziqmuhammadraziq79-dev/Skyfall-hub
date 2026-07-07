@@ -1,0 +1,329 @@
+-- Services
+local playersService = game:GetService("Players")
+local runService = game:GetService("RunService")
+local coreGui = game:GetService("CoreGui")
+local lightingService = game:GetService("Lighting")
+
+-- 60+ FPS Unlocker Force-On (Delta Mobile Environment Hook)
+if setfpscap then setfpscap(999) end
+
+-- State & Config Fly Engine
+local localPlayer = playersService.LocalPlayer
+local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+
+local isFlying = false
+local baseSpeed = 65
+local maxSpeedMultiplier = 2.5
+local currentSpeed = baseSpeed
+local verticalDirection = 0
+local currentVelocityTarget = Vector3.new(0, 0, 0)
+local lerpAlpha = 0.12 -- Makin kecil makin smooth interpolasinya, lari dari Nextbot Evade jadi mulus banget
+
+-- Mode State
+local currentSmoothMode = "None" -- "None", "Super", "Extreme"
+local originalProps = {}
+
+-- Setup Attachment & LinearVelocity
+local attachment, linearVelocity
+local function setupPhysics(char)
+	local hrp = char:WaitForChild("HumanoidRootPart")
+	if attachment then attachment:Destroy() end
+	if linearVelocity then linearVelocity:Destroy() end
+	
+	attachment = Instance.new("Attachment")
+	attachment.Name = "UltraMaxFlyAttachment"
+	attachment.Parent = hrp
+
+	linearVelocity = Instance.new("LinearVelocity")
+	linearVelocity.Name = "UltraMaxFlyVelocity"
+	linearVelocity.Attachment0 = attachment
+	linearVelocity.MaxForce = 0
+	linearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+	linearVelocity.Parent = hrp
+end
+setupPhysics(character)
+
+localPlayer.CharacterAdded:Connect(function(newChar)
+	character = newChar
+	humanoid = character:WaitForChild("Humanoid")
+	rootPart = character:WaitForChild("HumanoidRootPart")
+	setupPhysics(newChar)
+	if isFlying then
+		humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+		linearVelocity.MaxForce = math.huge
+	end
+end)
+
+-- ==========================================
+-- RENDERING MODULATORS (NO GIMICK OPTIMIZER)
+-- ==========================================
+local function applySuperSmooth()
+	lightingService.GlobalShadows = false
+	lightingService.FogEnd = 9e9
+	
+	-- Matikan partikel berat & efek distorsi layar Evade (Blur, SunRays)
+	for _, v in ipairs(lightingService:GetChildren()) do
+		if v:IsA("PostEffect") then v.Enabled = false end
+	end
+	
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("BasePart") and not obj:IsDescendantOf(character) then
+			if not originalProps[obj] then
+				originalProps[obj] = {Material = obj.Material, Reflectance = obj.Reflectance}
+			end
+			obj.Material = Enum.Material.SmoothPlastic
+			obj.Reflectance = 0
+		elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+			obj.Enabled = false
+		end
+	end
+end
+
+local function applyExtremeSmooth()
+	applySuperSmooth() -- Jalankan basis super smooth dulu
+	
+	-- Tembak setting physics rendering internal game engine
+	settings().Physics.PhysicsEnvironmentalThrottle = Enum.EnviromentalPhysicsThrottle.Disabled
+	
+	-- Babat habis Decal sisa darah/efek di Evade & ganti material tanah jadi total flat black/smooth plastic
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("Decal") or obj:IsA("Texture") then
+			obj:Destroy()
+		elseif obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
+			-- Paksa model mesh 3D rumit jadi low-poly proxy rendering
+			if obj:IsA("MeshPart") then 
+				obj.Material = Enum.Material.SmoothPlastic 
+			end
+		end
+	end
+end
+
+local function restoreRendering()
+	for obj, props in pairs(originalProps) do
+		if obj and obj.Parent then
+			obj.Material = props.Material
+			obj.Reflectance = props.Reflectance
+		end
+	end
+	lightingService.GlobalShadows = true
+	settings().Physics.PhysicsEnvironmentalThrottle = Enum.EnviromentalPhysicsThrottle.Default
+	table.clear(originalProps)
+end
+
+-- Garbage Collection Loop (Pendingin RAM 3 Detik)
+task.spawn(function()
+	while true do
+		task.wait(3)
+		if currentSmoothMode ~= "None" then
+			if gcinfo then gcinfo() end
+			pcall(collectgarbage, "collect")
+		end
+	end
+end)
+
+-- ==========================================
+-- GUI INTERFACE (CYBERPUNK SLEEK RED)
+-- ==========================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DeltaUltraMaxPanel"
+screenGui.ResetOnSpawn = false
+
+local success, _ = pcall(function() screenGui.Parent = coreGui end)
+if not success then screenGui.Parent = localPlayer:WaitForChild("PlayerGui") end
+
+local openBtn = Instance.new("TextButton")
+openBtn.Name = "Open"
+openBtn.Size = UDim2.new(0, 70, 0, 35)
+openBtn.Position = UDim2.new(0, 15, 0, 15)
+openBtn.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+openBtn.TextColor3 = Color3.fromRGB(255, 0, 80)
+openBtn.TextSize = 11
+openBtn.Text = "[ ENGINE ]"
+openBtn.Font = Enum.Font.Code
+openBtn.Visible = false
+openBtn.Parent = screenGui
+Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", openBtn).Color = Color3.fromRGB(60, 10, 20)
+
+local mainPanel = Instance.new("Frame")
+mainPanel.Name = "MainPanel"
+mainPanel.Size = UDim2.new(0, 250, 0, 310)
+mainPanel.Position = UDim2.new(0.15, 0, 0.25, 0)
+mainPanel.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
+mainPanel.BorderSizePixel = 0
+mainPanel.Active = true
+mainPanel.Draggable = true
+mainPanel.Parent = screenGui
+Instance.new("UICorner", mainPanel).CornerRadius = UDim.new(0, 12)
+
+local uiStroke = Instance.new("UIStroke")
+uiStroke.Color = Color3.fromRGB(50, 15, 25)
+uiStroke.Thickness = 1.5
+uiStroke.Parent = mainPanel
+
+local titleBar = Instance.new("TextLabel")
+titleBar.Name = "Title"
+titleBar.Size = UDim2.new(1, -45, 0, 40)
+titleBar.Position = UDim2.new(0, 15, 0, 0)
+titleBar.BackgroundTransparency = 1
+titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleBar.TextSize = 12
+titleBar.Text = "EVADE ULTRA MAX [FPS: --]"
+titleBar.Font = Enum.Font.Code
+titleBar.TextXAlignment = Enum.TextXAlignment.Left
+titleBar.Parent = mainPanel
+
+-- Live Realtime Monitor FPS
+runService.RenderStepped:Connect(function(delta)
+	titleBar.Text = "EVADE ULTRA MAX [FPS: " .. tostring(math.round(1 / delta)) .. "]"
+end)
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Name = "Close"
+closeBtn.Size = UDim2.new(0, 35, 0, 35)
+closeBtn.Position = UDim2.new(1, -40, 0, 2.5)
+closeBtn.BackgroundTransparency = 1
+closeBtn.TextColor3 = Color3.fromRGB(255, 50, 50)
+closeBtn.TextSize = 15
+closeBtn.Text = "✕"
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.Parent = mainPanel
+
+-- BUTTON 1: Fly Mode Toggle
+local flyToggle = Instance.new("TextButton")
+flyToggle.Size = UDim2.new(1, -30, 0, 42)
+flyToggle.Position = UDim2.new(0, 15, 0, 50)
+flyToggle.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+flyToggle.TextColor3 = Color3.fromRGB(255, 60, 80)
+flyToggle.TextSize = 11
+flyToggle.Text = "BRUTAL FLY: DISABLED"
+flyToggle.Font = Enum.Font.Code
+flyToggle.Parent = mainPanel
+Instance.new("UICorner", flyToggle).CornerRadius = UDim.new(0, 8)
+local flyStroke = Instance.new("UIStroke", flyToggle)
+flyStroke.Color = Color3.fromRGB(50, 20, 30)
+
+-- BUTTON 2: Super Smooth Mode
+local superBtn = Instance.new("TextButton")
+superBtn.Size = UDim2.new(1, -30, 0, 42)
+superBtn.Position = UDim2.new(0, 15, 0, 100)
+superBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+superBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+superBtn.TextSize = 11
+superBtn.Text = "MODE: SUPER SMOOTH [OFF]"
+superBtn.Font = Enum.Font.Code
+superBtn.Parent = mainPanel
+Instance.new("UICorner", superBtn).CornerRadius = UDim.new(0, 8)
+local superStroke = Instance.new("UIStroke", superBtn)
+superStroke.Color = Color3.fromRGB(40, 40, 40)
+
+-- BUTTON 3: Extreme Smooth Mode (No Gimmick Uncapped Frame)
+local extremeBtn = Instance.new("TextButton")
+extremeBtn.Size = UDim2.new(1, -30, 0, 42)
+extremeBtn.Position = UDim2.new(0, 15, 0, 150)
+extremeBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+extremeBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+extremeBtn.TextSize = 11
+extremeBtn.Text = "MODE: EXTREME SMOOTH [OFF]"
+extremeBtn.Font = Enum.Font.Code
+extremeBtn.Parent = mainPanel
+Instance.new("UICorner", extremeBtn).CornerRadius = UDim.new(0, 8)
+local extremeStroke = Instance.new("UIStroke", extremeBtn)
+extremeStroke.Color = Color3.fromRGB(40, 40, 40)
+
+-- Controls Container (Up/Down)
+local controlsFrame = Instance.new("Frame")
+controlsFrame.Size = UDim2.new(1, -30, 0, 50)
+controlsFrame.Position = UDim2.new(0, 15, 0, 205)
+controlsFrame.BackgroundTransparency = 1
+controlsFrame.Parent = mainPanel
+
+local upBtn = Instance.new("TextButton")
+upBtn.Size = UDim2.new(0.48, 0, 1, 0)
+upBtn.Position = UDim2.new(0, 0, 0, 0)
+upBtn.BackgroundColor3 = Color3.fromRGB(12, 20, 15)
+upBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
+upBtn.TextSize = 14
+upBtn.Text = "▲ ASCEND"
+upBtn.Font = Enum.Font.Code
+upBtn.Parent = controlsFrame
+Instance.new("UICorner", upBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", upBtn).Color = Color3.fromRGB(20, 50, 30)
+
+local downBtn = Instance.new("TextButton")
+downBtn.Size = UDim2.new(0.48, 0, 1, 0)
+downBtn.Position = UDim2.new(0.52, 0, 0, 0)
+downBtn.BackgroundColor3 = Color3.fromRGB(22, 12, 15)
+downBtn.TextColor3 = Color3.fromRGB(255, 50, 80)
+downBtn.TextSize = 14
+downBtn.Text = "▼ DESCEND"
+downBtn.Font = Enum.Font.Code
+downBtn.Parent = controlsFrame
+Instance.new("UICorner", downBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", downBtn).Color = Color3.fromRGB(60, 20, 30)
+
+-- Core Functionality Interactivity Toggle
+closeBtn.MouseButton1Click:Connect(function()
+	mainPanel.Visible = false
+	openBtn.Visible = true
+end)
+
+openBtn.MouseButton1Click:Connect(function()
+	mainPanel.Visible = true
+	openBtn.Visible = false
+end)
+
+-- Fly Mechanism
+flyToggle.MouseButton1Click:Connect(function()
+	isFlying = not isFlying
+	if isFlying then
+		flyToggle.Text = "BRUTAL FLY: ENGINE_ACTIVE"
+		flyToggle.TextColor3 = Color3.fromRGB(0, 255, 150)
+		flyStroke.Color = Color3.fromRGB(20, 50, 35)
+		if humanoid and linearVelocity then
+			humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+			linearVelocity.MaxForce = math.huge
+		end
+	else
+		flyToggle.Text = "BRUTAL FLY: DISABLED"
+		flyToggle.TextColor3 = Color3.fromRGB(255, 60, 80)
+		flyStroke.Color = Color3.fromRGB(50, 20, 30)
+		if humanoid and linearVelocity then
+			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+			linearVelocity.MaxForce = 0
+			linearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+		end
+		verticalDirection = 0
+		currentVelocityTarget = Vector3.new(0, 0, 0)
+	end
+end)
+
+-- Rendering Switch Engine Control
+superBtn.MouseButton1Click:Connect(function()
+	if currentSmoothMode == "Super" then
+		currentSmoothMode = "None"
+		superBtn.Text = "MODE: SUPER SMOOTH [OFF]"
+		superBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+		superStroke.Color = Color3.fromRGB(40, 40, 40)
+		restoreRendering()
+	else
+		restoreRendering()
+		currentSmoothMode = "Super"
+		superBtn.Text = "MODE: SUPER SMOOTH [ACTIVE]"
+		superBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
+		superStroke.Color = Color3.fromRGB(20, 50, 30)
+		extremeBtn.Text = "MODE: EXTREME SMOOTH [OFF]"
+		extremeBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+		extremeStroke.Color = Color3.fromRGB(40, 40, 40)
+		applySuperSmooth()
+	end
+end)
+
+extremeBtn.MouseButton1Click:Connect(function()
+	if currentSmoothMode == "Extreme" then
+		currentSmoothMode = "None"
+		extremeBtn.Text = "MODE: EXTREME SMOOTH [OFF]"
+		extremeBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+		extremeStroke.Color = Color
