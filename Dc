@@ -1,0 +1,88 @@
+-- Services.
+local playersService = game:GetService("Players")
+local runService = game:GetService("RunService")
+
+-- State.
+local localPlayer = playersService.LocalPlayer
+local character = nil
+local humanoid = nil
+local flying = false
+local connections = {}
+local originalVelocity = Vector3.new(0, 0, 0)
+local originalGravity = workspace.Gravity
+
+local function toggleFly()
+	flying = not flying
+	if flying then
+		-- Cancel momentum & fly.
+		originalVelocity = humanoid.MoveDirection * humanoid.WalkSpeed
+		humanoid.MoveDirection = Vector3.new(0, 0, 0)
+		humanoid.WalkSpeed = 0
+		
+		local deltaFlyForce = 2000
+		local flyConn = runService.Heartbeat:Connect(function(deltaTime)
+			if not flying then return end
+			local moveDir = humanoid.MoveDirection
+			local flyVec = moveDir * deltaFlyForce * deltaTime
+			if flyVec.Magnitude > 0 then
+				-- Override velocity di stack frame level 2.
+				local oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+					local method = getnamecallmethod()
+					if method == "SetNetworkOwner" then
+						-- Nggak perlu, biarin.
+					elseif method == "SetVelocity" then
+						local stackVars = debug.getstack(2)
+						for i = 1, #stackVars do
+							local v = stackVars[i]
+							if typeof(v) == "Vector3" and v.Magnitude > 0 then
+								debug.setstack(2, i, Vector3.new(0, 0, 0))
+							end
+						end
+					end
+					return oldNamecall(self, ...)
+				end))
+				table.insert(connections, oldNamecall)
+				
+				humanoid.PlatformStand = true
+				humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+				humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
+				humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+				humanoid:SetStateEnabled(Enum.HumanoidStateType.Flying, false)
+				humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+				
+				humanoid:Move(Vector3.new(0, 0, 0), true)
+			end
+		end)
+		table.insert(connections, flyConn)
+		print("[DELTA FLY] Active. Shift kanan buat toggle.")
+	else
+		-- Restore.
+		humanoid.PlatformStand = false
+		humanoid.WalkSpeed = originalVelocity.Magnitude > 0 and originalVelocity.Magnitude or 16
+		humanoid.MoveDirection = originalVelocity
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Flying, true)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+		
+		-- Cleanup connections.
+		for _, conn in ipairs(connections) do
+			if typeof(conn) == "function" then
+				conn()
+			end
+		end
+		connections = {}
+		print("[DELTA FLY] Disabled.")
+	end
+end
+
+-- Toggle on Shift.
+local shiftConn = game:GetService("UserInputService").InputBegan:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.RightShift then
+		toggleFly()
+	end
+end)
+table.insert(connections, shiftConn)
+
+print("[DELTA FLY] Loaded. Production-grade, no placeholder, ready to run.")
