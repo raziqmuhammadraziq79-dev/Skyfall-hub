@@ -1,0 +1,440 @@
+-- INFERNO HUB v8.1 | HYPERION EDITION | DELTA ANDROID OPTIMIZED
+-- FIXED FLY ENGINE + EXTREME FPS BOOSTER (100+ TARGET)
+-- ALL-IN-ONE LOCAL EXECUTION
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Stats = game:GetService("Stats")
+local Workspace = game:GetService("Workspace")
+local LP = Players.LocalPlayer
+
+-- SAFE WRAPPERS FOR DELTA
+local function SafeFPS(f) if type(setfpscap)=="function" then pcall(function() setfpscap(f) end) end end
+SafeFPS(999) -- UNLOCK FPS CAP IMMEDIATELY
+
+-- GUI PARENT DETECTION
+local GuiParent
+do
+    local ok,res = pcall(function() return game:GetService("CoreGui") end)
+    GuiParent = (ok and res) or LP:WaitForChild("PlayerGui")
+end
+
+-- AGGRESSIVE CLEANUP
+for _,v in ipairs(GuiParent:GetChildren()) do
+    if v.Name and (v.Name:find("INFERNO") or v.Name:find("Hyperion")) then
+        pcall(function() v:Destroy() end)
+    end
+end
+
+-- STATE MANAGEMENT
+local Hub = {
+    IsFlying = false,
+    FPSBoost = false,
+    RTXActive = false,
+    LatencyOpt = false,
+    BaseSpeed = 70,
+    MaxMultiplier = 3.5,
+    CurrentSpeed = 70,
+    VerticalDir = 0,
+    LerpAlpha = 0.12 -- SLIGHTLY HIGHER FOR SNAPPY RESPONSE ON MOBILE
+}
+
+-- ==========================================
+-- FIXED FLY ENGINE (ALIGNPOSITION + ATTACHMENT)
+-- ==========================================
+local character = LP.Character or LP.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+local alignPos, alignOri, flyAttachment
+local function SetupPhysics(char)
+    pcall(function()
+        if alignPos then alignPos:Destroy() end
+        if alignOri then alignOri:Destroy() end
+        if flyAttachment then flyAttachment:Destroy() end
+        
+        local hrp = char:WaitForChild("HumanoidRootPart")
+        
+        -- CREATE DEDICATED ATTACHMENT FOR ALIGNPOSITION TARGET
+        flyAttachment = Instance.new("Attachment")
+        flyAttachment.Name = "HyperionFlyTarget"
+        flyAttachment.Parent = hrp
+        
+        alignPos = Instance.new("AlignPosition")
+        alignPos.Name = "HyperionAlignPos"
+        alignPos.Attachment0 = flyAttachment
+        alignPos.MaxForce = 4000
+        alignPos.Responsiveness = 30 -- HIGHER RESPONSIVENESS FOR MOBILE TOUCH
+        alignPos.Parent = hrp
+        
+        alignOri = Instance.new("AlignOrientation")
+        alignOri.Name = "HyperionAlignOri"
+        alignOri.Attachment0 = flyAttachment
+        alignOri.MaxTorque = 3000
+        alignOri.Responsiveness = 30
+        alignOri.Parent = hrp
+    end)
+end
+SetupPhysics(character)
+
+LP.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = character:WaitForChild("Humanoid")
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    SetupPhysics(newChar)
+    if Hub.IsFlying then
+        humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+        alignPos.MaxForce = 4000
+    end
+end)
+
+-- ==========================================
+-- EXTREME FPS BOOSTER MODULE (100+ TARGET)
+-- ==========================================
+local originalSettings = {}
+local function ToggleExtremeFPS(state)
+    Hub.FPSBoost = state
+    pcall(function()
+        if state then
+            -- CACHE ORIGINAL SETTINGS
+            originalSettings.Shadows = Lighting.GlobalShadows
+            originalSettings.FogEnd = Lighting.FogEnd
+            originalSettings.TerrainDetail = Workspace.Terrain.DetailLevel
+            
+            -- APPLY EXTREME OPTIMIZATIONS
+            Lighting.GlobalShadows = false
+            Lighting.FogEnd = 100000
+            Workspace.Terrain.DetailLevel = Enum.TerrainDetailLevel.Level1 -- LOWEST DETAIL
+            Workspace.Terrain.WaterWaveSize = 0
+            Workspace.Terrain.WaterWaveSpeed = 0
+            Workspace.Terrain.WaterReflectance = 0
+            
+            -- DISABLE ALL POST EFFECTS
+            for _, effect in ipairs(Lighting:GetChildren()) do
+                if effect:IsA("PostEffect") then
+                    originalSettings[effect] = effect.Enabled
+                    effect.Enabled = false
+                end
+            end
+            
+            -- FORCE RENDER DISTANCE REDUCTION (CLIENT SIDE ONLY)
+            settings().Rendering.QualityLevel = 1
+            
+            SafeFPS(999)
+        else
+            -- RESTORE ORIGINAL SETTINGS
+            Lighting.GlobalShadows = originalSettings.Shadows or true
+            Lighting.FogEnd = originalSettings.FogEnd or 1000
+            Workspace.Terrain.DetailLevel = originalSettings.TerrainDetail or Enum.TerrainDetailLevel.Level3
+            
+            for obj, enabled in pairs(originalSettings) do
+                if typeof(obj) == "Instance" and obj:IsA("PostEffect") and obj.Parent then
+                    obj.Enabled = enabled
+                end
+            end
+            
+            settings().Rendering.QualityLevel = 8
+        end
+    end)
+end
+
+-- RTX MODULE (CLIENT-SIDE ONLY)
+local originalMaterials = {}
+local rtxCC
+local function ToggleRTX(state)
+    Hub.RTXActive = state
+    pcall(function()
+        if not rtxCC then
+            rtxCC = Instance.new("ColorCorrectionEffect")
+            rtxCC.Name = "HyperionRTX_CC"
+            rtxCC.Parent = Lighting
+        end
+        
+        if state then
+            rtxCC.Brightness = 0.05
+            rtxCC.Contrast = 0.2
+            rtxCC.Saturation = 0.15
+            rtxCC.Enabled = true
+            Lighting.Ambient = Color3.fromRGB(30, 30, 35)
+            Lighting.OutdoorAmbient = Color3.fromRGB(45, 45, 50)
+            
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and not obj:IsDescendantOf(character) and obj.Transparency < 0.9 then
+                    if not originalMaterials[obj] then
+                        originalMaterials[obj] = {Material = obj.Material, Reflectance = obj.Reflectance}
+                    end
+                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.Reflectance = 0.1
+                end
+            end
+        else
+            rtxCC.Enabled = false
+            Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+            for obj, props in pairs(originalMaterials) do
+                if obj and obj.Parent then
+                    obj.Material = props.Material
+                    obj.Reflectance = props.Reflectance
+                end
+            end
+            table.clear(originalMaterials)
+        end
+    end)
+end
+
+-- LATENCY & RAM OPTIMIZATION
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if Hub.LatencyOpt then
+            pcall(function()
+                settings().Physics.PhysicsEnvironmentalThrottle = Enum.EnviromentalPhysicsThrottle.Disabled
+            end)
+        else
+            pcall(function()
+                settings().Physics.PhysicsEnvironmentalThrottle = Enum.EnviromentalPhysicsThrottle.Default
+            end)
+        end
+        pcall(collectgarbage, "collect")
+    end
+end)
+
+-- ==========================================
+-- CYBERPUNK UI FRAMEWORK
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "HyperionV81"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = GuiParent
+
+-- OPEN BUTTON
+local OpenBtn = Instance.new("TextButton")
+OpenBtn.Size = UDim2.new(0, 90, 0, 35)
+OpenBtn.Position = UDim2.new(0, 15, 0, 15)
+OpenBtn.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
+OpenBtn.TextColor3 = Color3.fromRGB(0, 255, 200)
+OpenBtn.TextSize = 10
+OpenBtn.Text = "[ HYPERION CORE ]"
+OpenBtn.Font = Enum.Font.Code
+OpenBtn.Visible = false
+OpenBtn.Parent = ScreenGui
+Instance.new("UICorner", OpenBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", OpenBtn).Color = Color3.fromRGB(0, 255, 150)
+
+-- MAIN PANEL
+local MainPanel = Instance.new("Frame")
+MainPanel.Name = "MainPanel"
+MainPanel.Size = UDim2.new(0, 270, 0, 380) -- TALLER FOR NEW FPS BUTTON
+MainPanel.Position = UDim2.new(0.2, 0, 0.15, 0)
+MainPanel.BackgroundColor3 = Color3.fromRGB(6, 6, 6)
+MainPanel.Active = true
+MainPanel.Draggable = true
+MainPanel.Parent = ScreenGui
+Instance.new("UICorner", MainPanel).CornerRadius = UDim.new(0, 12)
+local panelStroke = Instance.new("UIStroke", MainPanel)
+panelStroke.Color = Color3.fromRGB(50, 50, 55)
+panelStroke.Thickness = 1.5
+
+-- HUD METRICS
+local MonitorLabel = Instance.new("TextLabel")
+MonitorLabel.Size = UDim2.new(1, -45, 0, 45)
+MonitorLabel.Position = UDim2.new(0, 15, 0, 0)
+MonitorLabel.BackgroundTransparency = 1
+MonitorLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+MonitorLabel.TextSize = 11
+MonitorLabel.Text = "FPS: -- | PING: -- ms"
+MonitorLabel.Font = Enum.Font.Code
+MonitorLabel.TextXAlignment = Enum.TextXAlignment.Left
+MonitorLabel.Parent = MainPanel
+
+RunService.RenderStepped:Connect(function(delta)
+    local fps = math.round(1 / delta)
+    local ping = math.round(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+    MonitorLabel.Text = "FPS: " .. tostring(fps) .. " | PING: " .. tostring(ping) .. " ms"
+end)
+
+-- CLOSE BUTTON
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 35, 0, 35)
+CloseBtn.Position = UDim2.new(1, -40, 0, 5)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.TextColor3 = Color3.fromRGB(255, 60, 60)
+CloseBtn.TextSize = 15
+CloseBtn.Text = "✕"
+CloseBtn.Font = Enum.Font.SourceSansBold
+CloseBtn.Parent = MainPanel
+
+-- CYBER BUTTON FACTORY
+local function CreateCyberButton(text, pos, activeColor, strokeColor)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -30, 0, 38)
+    btn.Position = pos
+    btn.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+    btn.TextColor3 = Color3.fromRGB(180, 180, 180)
+    btn.TextSize = 11
+    btn.Text = text
+    btn.Font = Enum.Font.Code
+    btn.Parent = MainPanel
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = strokeColor
+    return btn, stroke
+end
+
+-- CORE CONTROLS
+local FlyToggle, FlyStroke = CreateCyberButton("HYPERION FLY: OFF", UDim2.new(0, 15, 0, 45), Color3.fromRGB(0, 255, 150), Color3.fromRGB(50, 20, 30))
+FlyToggle.TextColor3 = Color3.fromRGB(255, 70, 90)
+
+local FPSToggle, FPSStroke = CreateCyberButton("EXTREME FPS BOOST: OFF", UDim2.new(0, 15, 0, 90), Color3.fromRGB(255, 200, 0), Color3.fromRGB(40, 40, 40))
+
+local RTXToggle, RTXStroke = CreateCyberButton("RTX SHADERS: OFF", UDim2.new(0, 15, 0, 135), Color3.fromRGB(255, 0, 120), Color3.fromRGB(40, 40, 40))
+local LatencyToggle, LatencyStroke = CreateCyberButton("ZERO LATENCY: OFF", UDim2.new(0, 15, 0, 180), Color3.fromRGB(0, 200, 255), Color3.fromRGB(40, 40, 40))
+
+-- VERTICAL CONTROLS
+local ControlsFrame = Instance.new("Frame")
+ControlsFrame.Size = UDim2.new(1, -30, 0, 50)
+ControlsFrame.Position = UDim2.new(0, 15, 0, 235)
+ControlsFrame.BackgroundTransparency = 1
+ControlsFrame.Parent = MainPanel
+
+local UpBtn = Instance.new("TextButton")
+UpBtn.Size = UDim2.new(0.48, 0, 1, 0)
+UpBtn.Position = UDim2.new(0, 0, 0, 0)
+UpBtn.BackgroundColor3 = Color3.fromRGB(10, 20, 14)
+UpBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
+UpBtn.TextSize = 13
+UpBtn.Text = "▲ ASCEND"
+UpBtn.Font = Enum.Font.Code
+UpBtn.Parent = ControlsFrame
+Instance.new("UICorner", UpBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", UpBtn).Color = Color3.fromRGB(20, 50, 30)
+
+local DownBtn = Instance.new("TextButton")
+DownBtn.Size = UDim2.new(0.48, 0, 1, 0)
+DownBtn.Position = UDim2.new(0.52, 0, 0, 0)
+DownBtn.BackgroundColor3 = Color3.fromRGB(22, 10, 14)
+DownBtn.TextColor3 = Color3.fromRGB(255, 60, 80)
+DownBtn.TextSize = 13
+DownBtn.Text = "▼ DESCEND"
+DownBtn.Font = Enum.Font.Code
+DownBtn.Parent = ControlsFrame
+Instance.new("UICorner", DownBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", DownBtn).Color = Color3.fromRGB(60, 20, 30)
+
+-- UI INTERACTION HANDLERS
+CloseBtn.MouseButton1Click:Connect(function()
+    MainPanel.Visible = false
+    OpenBtn.Visible = true
+end)
+
+OpenBtn.MouseButton1Click:Connect(function()
+    MainPanel.Visible = true
+    OpenBtn.Visible = false
+end)
+
+-- FLY TOGGLE (FIXED WITH PROPER INITIALIZATION)
+FlyToggle.MouseButton1Click:Connect(function()
+    Hub.IsFlying = not Hub.IsFlying
+    if Hub.IsFlying then
+        FlyToggle.Text = "HYPERION FLY: ACTIVE"
+        FlyToggle.TextColor3 = Color3.fromRGB(0, 255, 150)
+        FlyStroke.Color = Color3.fromRGB(20, 50, 35)
+        if humanoid and alignPos and flyAttachment then
+            -- CRITICAL FIX: SET INITIAL POSITION TO CURRENT HRP POSITION
+            flyAttachment.WorldCFrame = rootPart.CFrame
+            alignPos.Position = rootPart.Position
+            humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+            alignPos.MaxForce = 4000
+        end
+    else
+        FlyToggle.Text = "HYPERION FLY: OFF"
+        FlyToggle.TextColor3 = Color3.fromRGB(255, 70, 90)
+        FlyStroke.Color = Color3.fromRGB(50, 20, 30)
+        if humanoid and alignPos then
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            alignPos.MaxForce = 0
+        end
+        Hub.VerticalDir = 0
+        Hub.CurrentSpeed = Hub.BaseSpeed
+    end
+end)
+
+-- FPS BOOST TOGGLE
+FPSToggle.MouseButton1Click:Connect(function()
+    ToggleExtremeFPS(not Hub.FPSBoost)
+    if Hub.FPSBoost then
+        FPSToggle.Text = "EXTREME FPS BOOST: ON"
+        FPSToggle.TextColor3 = Color3.fromRGB(255, 200, 0)
+        FPSStroke.Color = Color3.fromRGB(80, 60, 20)
+    else
+        FPSToggle.Text = "EXTREME FPS BOOST: OFF"
+        FPSToggle.TextColor3 = Color3.fromRGB(180, 180, 180)
+        FPSStroke.Color = Color3.fromRGB(40, 40, 40)
+    end
+end)
+
+-- MODE TOGGLES
+RTXToggle.MouseButton1Click:Connect(function()
+    ToggleRTX(not Hub.RTXActive)
+    if Hub.RTXActive then
+        RTXToggle.Text = "RTX SHADERS: ON"
+        RTXToggle.TextColor3 = Color3.fromRGB(255, 0, 120)
+        RTXStroke.Color = Color3.fromRGB(100, 20, 60)
+    else
+        RTXToggle.Text = "RTX SHADERS: OFF"
+        RTXToggle.TextColor3 = Color3.fromRGB(180, 180, 180)
+        RTXStroke.Color = Color3.fromRGB(40, 40, 40)
+    end
+end)
+
+LatencyToggle.MouseButton1Click:Connect(function()
+    Hub.LatencyOpt = not Hub.LatencyOpt
+    if Hub.LatencyOpt then
+        LatencyToggle.Text = "ZERO LATENCY: ON"
+        LatencyToggle.TextColor3 = Color3.fromRGB(0, 255, 255)
+        LatencyStroke.Color = Color3.fromRGB(20, 60, 80)
+    else
+        LatencyToggle.Text = "ZERO LATENCY: OFF"
+        LatencyToggle.TextColor3 = Color3.fromRGB(180, 180, 180)
+        LatencyStroke.Color = Color3.fromRGB(40, 40, 40)
+    end
+end)
+
+-- TOUCH BINDERS FOR VERTICAL MOVEMENT
+local function BindTouch(button, dirValue)
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            Hub.VerticalDir = dirValue
+        end
+    end)
+    button.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if Hub.VerticalDir == dirValue then Hub.VerticalDir = 0 end
+        end
+    end)
+end
+BindTouch(UpBtn, 1)
+BindTouch(DownBtn, -1)
+
+-- FIXED FLY PHYSICS LOOP
+RunService.Heartbeat:Connect(function(dt)
+    if not Hub.IsFlying or not rootPart or not humanoid or not alignPos or not flyAttachment then return end
+    
+    local moveDir = humanoid.MoveDirection
+    
+    -- AUTO-SPRINT MOMENTUM
+    if moveDir.Magnitude > 0 or Hub.VerticalDir ~= 0 then
+        Hub.CurrentSpeed = math.min(Hub.CurrentSpeed + (dt * Hub.BaseSpeed * 2.5), Hub.BaseSpeed * Hub.MaxMultiplier)
+    else
+        Hub.CurrentSpeed = Hub.BaseSpeed
+    end
+    
+    local rawTarget = (moveDir * Hub.CurrentSpeed) + Vector3.new(0, Hub.VerticalDir * Hub.CurrentSpeed, 0)
+    
+    -- CRITICAL FIX: UPDATE ATTACHMENT WORLD CFRAME EVERY FRAME
+    flyAttachment.WorldCFrame = rootPart.CFrame
+    alignPos.Position = rootPart.Position + rawTarget
+end)
+
+print("[HYPERION v8.1] Fixed Fly Engine + Extreme FPS Booster Initialized!")
+print("[HYPERION] AlignPosition w/ Attachment | Terrain LOD Bypass | 999 FPS Cap")
