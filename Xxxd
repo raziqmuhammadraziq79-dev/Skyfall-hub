@@ -1,0 +1,215 @@
+-- Services
+local playersService = game:GetService("Players")
+local runService = game:GetService("RunService")
+local coreGui = game:GetService("CoreGui")
+local userInputService = game:GetService("UserInputService")
+
+-- State
+local localPlayer = playersService.LocalPlayer
+local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+
+local isFlying = false
+local flySpeed = 60
+local verticalDirection = 0
+
+-- Setup Physics Components Function
+local attachment, linearVelocity
+local function setupPhysics(char)
+	local hrp = char:WaitForChild("HumanoidRootPart")
+	
+	if attachment then attachment:Destroy() end
+	if linearVelocity then linearVelocity:Destroy() end
+	
+	attachment = Instance.new("Attachment")
+	attachment.Name = "DeltaFlyAttachment"
+	attachment.Parent = hrp
+
+	linearVelocity = Instance.new("LinearVelocity")
+	linearVelocity.Name = "DeltaFlyVelocity"
+	linearVelocity.Attachment0 = attachment
+	linearVelocity.MaxForce = 0
+	linearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+	linearVelocity.Parent = hrp
+end
+setupPhysics(character)
+
+localPlayer.CharacterAdded:Connect(function(newChar)
+	character = newChar
+	humanoid = character:WaitForChild("Humanoid")
+	rootPart = character:WaitForChild("HumanoidRootPart")
+	setupPhysics(newChar)
+	if isFlying then
+		humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+		linearVelocity.MaxForce = math.huge
+	end
+end)
+
+-- Main GUI Framework
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DeltaFlyProPanel"
+screenGui.ResetOnSpawn = false
+
+local success, _ = pcall(function() screenGui.Parent = coreGui end)
+if not success then screenGui.Parent = localPlayer:WaitForChild("PlayerGui") end
+
+-- Open/Restore Button (Kecil di pojok kalau di-hide)
+local openBtn = Instance.new("TextButton")
+openBtn.Name = "OpenPanel"
+openBtn.Size = UDim2.new(0, 50, 0, 30)
+openBtn.Position = UDim2.new(0, 10, 0, 10)
+openBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+openBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
+openBtn.TextSize = 14
+openBtn.Text = "OPEN"
+openBtn.Font = Enum.Font.SourceSansBold
+openBtn.Visible = false
+openBtn.Parent = screenGui
+Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 6)
+
+-- Main Panel Frame
+local mainPanel = Instance.new("Frame")
+mainPanel.Name = "MainPanel"
+mainPanel.Size = UDim2.new(0, 220, 0, 180)
+mainPanel.Position = UDim2.new(0.1, 0, 0.3, 0)
+mainPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+mainPanel.BorderSizePixel = 0
+mainPanel.Active = true
+mainPanel.Draggable = true -- Biar bisa digeser-geser di layar HP lo!
+mainPanel.Parent = screenGui
+Instance.new("UICorner", mainPanel).CornerRadius = UDim.new(0, 10)
+
+-- Title Bar
+local titleBar = Instance.new("TextLabel")
+titleBar.Name = "Title"
+titleBar.Size = UDim2.new(1, -40, 0, 35)
+titleBar.Position = UDim2.new(0, 10, 0, 0)
+titleBar.BackgroundTransparency = 1
+titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleBar.TextSize = 16
+titleBar.Text = "DELTA FLY v2.0"
+titleBar.Font = Enum.Font.SourceSansBold
+titleBar.TextXAlignment = Enum.TextXAlignment.Left
+titleBar.Parent = mainPanel
+
+-- Hide / Close Button [X]
+local closeBtn = Instance.new("TextButton")
+closeBtn.Name = "HidePanel"
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -35, 0, 2.5)
+closeBtn.BackgroundTransparency = 1
+closeBtn.TextColor3 = Color3.fromRGB(255, 50, 50)
+closeBtn.TextSize = 18
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.Parent = mainPanel
+
+-- Inside Panel: Toggle Fly Button
+local flyToggle = Instance.new("TextButton")
+flyToggle.Name = "FlyToggle"
+flyToggle.Size = UDim2.new(1, -20, 0, 40)
+flyToggle.Position = UDim2.new(0, 10, 0, 45)
+flyToggle.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+flyToggle.TextColor3 = Color3.fromRGB(255, 60, 60)
+flyToggle.TextSize = 16
+flyToggle.Text = "STATUS: OFF"
+flyToggle.Font = Enum.Font.SourceSansBold
+flyToggle.Parent = mainPanel
+Instance.new("UICorner", flyToggle).CornerRadius = UDim.new(0, 6)
+
+-- Inside Panel: Control Container (Up/Down)
+local controlsFrame = Instance.new("Frame")
+controlsFrame.Name = "Controls"
+controlsFrame.Size = UDim2.new(1, -20, 0, 70)
+controlsFrame.Position = UDim2.new(0, 10, 0, 95)
+controlsFrame.BackgroundTransparency = 1
+controlsFrame.Parent = mainPanel
+
+-- Up Button
+local upBtn = Instance.new("TextButton")
+upBtn.Name = "Up"
+upBtn.Size = UDim2.new(0.48, 0, 1, 0)
+upBtn.Position = UDim2.new(0, 0, 0, 0)
+upBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+upBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+upBtn.TextSize = 22
+upBtn.Text = "▲ FLY UP"
+upBtn.Font = Enum.Font.SourceSansBold
+upBtn.Parent = controlsFrame
+Instance.new("UICorner", upBtn).CornerRadius = UDim.new(0, 6)
+
+-- Down Button
+local downBtn = Instance.new("TextButton")
+downBtn.Name = "Down"
+downBtn.Size = UDim2.new(0.48, 0, 1, 0)
+downBtn.Position = UDim2.new(0.52, 0, 0, 0)
+downBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+downBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+downBtn.TextSize = 22
+downBtn.Text = "▼ DOWN"
+downBtn.Font = Enum.Font.SourceSansBold
+downBtn.Parent = controlsFrame
+Instance.new("UICorner", downBtn).CornerRadius = UDim.new(0, 6)
+
+-- UI Interactions (Hide / Show)
+closeBtn.MouseButton1Click:Connect(function()
+	mainPanel.Visible = false
+	openBtn.Visible = true
+end)
+
+openBtn.MouseButton1Click:Connect(function()
+	mainPanel.Visible = true
+	openBtn.Visible = false
+end)
+
+-- Fly Action Toggle
+flyToggle.MouseButton1Click:Connect(function()
+	isFlying = not isFlying
+	if isFlying then
+		flyToggle.Text = "STATUS: FLYING"
+		flyToggle.TextColor3 = Color3.fromRGB(0, 255, 120)
+		if humanoid and linearVelocity then
+			humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+			linearVelocity.MaxForce = math.huge
+		end
+	else
+		flyToggle.Text = "STATUS: OFF"
+		flyToggle.TextColor3 = Color3.fromRGB(255, 60, 60)
+		if humanoid and linearVelocity then
+			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+			linearVelocity.MaxForce = 0
+			linearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+		end
+		verticalDirection = 0
+	end
+end)
+
+-- Setup Mobile Touch Controls for Up/Down
+local function bindTouch(button, dirValue)
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			verticalDirection = dirValue
+		end
+	end)
+	button.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if verticalDirection == dirValue then verticalDirection = 0 end
+		end
+	end)
+end
+
+bindTouch(upBtn, 1)
+bindTouch(downBtn, -1)
+
+-- Main Physics Sync Loop
+runService.Heartbeat:Connect(function()
+	if not isFlying or not rootPart or not humanoid or not linearVelocity then return end
+	
+	local moveDirection = humanoid.MoveDirection
+	local finalVelocity = (moveDirection * flySpeed) + Vector3.new(0, verticalDirection * flySpeed, 0)
+	
+	linearVelocity.VectorVelocity = finalVelocity
+end)
+
+print("[DELTA-FLY-PANEL] Clean Interface Loaded Boss! All Systems Optimal. 🔥")
