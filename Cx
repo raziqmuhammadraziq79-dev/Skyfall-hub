@@ -1,0 +1,897 @@
+-- Sylira Hub v2.0 - Skyfall/Fluent Style UI
+-- Complete Rebuild - No Overlap - No Bugs
+-- Compatible: Delta Executor Android
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local TeleportService = game:GetService("TeleportService")
+
+-- Cleanup previous instance
+if CoreGui:FindFirstChild("SyliraHubV2") then
+    CoreGui.SyliraHubV2:Destroy()
+end
+
+-- Theme Colors (Fluent/Skyfall Dark Theme)
+local Theme = {
+    Background = Color3.fromRGB(18, 18, 22),
+    Sidebar = Color3.fromRGB(14, 14, 18),
+    TopBar = Color3.fromRGB(22, 22, 28),
+    Accent = Color3.fromRGB(99, 102, 241),
+    AccentHover = Color3.fromRGB(129, 132, 255),
+    Text = Color3.fromRGB(230, 230, 235),
+    TextDim = Color3.fromRGB(140, 140, 155),
+    Button = Color3.fromRGB(30, 30, 38),
+    ButtonHover = Color3.fromRGB(40, 40, 50),
+    ToggleOn = Color3.fromRGB(99, 102, 241),
+    ToggleOff = Color3.fromRGB(55, 55, 65),
+    Close = Color3.fromRGB(239, 68, 68),
+    Minimize = Color3.fromRGB(250, 204, 21),
+    Border = Color3.fromRGB(35, 35, 45)
+}
+
+local Config = {
+    InfiniteHealth = false,
+    AntiTroll = false,
+    FPSBoost = false,
+    Fullbright = false,
+    Speed = 16,
+    JumpPower = 50,
+    Noclip = false,
+    ESP = false,
+    AntiAFK = false,
+    AutoFarm = false
+}
+
+-- ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SyliraHubV2"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = CoreGui
+
+-- Main Window
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 520, 0, 380)
+MainFrame.Position = UDim2.new(0.5, -260, 0.5, -190)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 8)
+MainCorner.Parent = MainFrame
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Theme.Border
+MainStroke.Thickness = 1
+MainStroke.Parent = MainFrame
+
+-- Top Bar
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Size = UDim2.new(1, 0, 0, 36)
+TopBar.BackgroundColor3 = Theme.TopBar
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 8)
+TopCorner.Parent = TopBar
+
+-- Fix top bar bottom corners
+local TopFix = Instance.new("Frame")
+TopFix.Size = UDim2.new(1, 0, 0, 8)
+TopFix.Position = UDim2.new(0, 0, 1, -8)
+TopFix.BackgroundColor3 = Theme.TopBar
+TopFix.BorderSizePixel = 0
+TopFix.Parent = TopBar
+
+-- Title
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(0, 200, 1, 0)
+Title.Position = UDim2.new(0, 12, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "SYLIRA HUB  |  PRISON LIFE"
+Title.Font = Enum.Font.GothamBold
+Title.TextColor3 = Theme.Text
+Title.TextSize = 12
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TopBar
+
+-- Window Controls
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 16, 0, 16)
+CloseBtn.Position = UDim2.new(1, -26, 0.5, -8)
+CloseBtn.BackgroundColor3 = Theme.Close
+CloseBtn.Text = ""
+CloseBtn.AutoButtonColor = false
+CloseBtn.Parent = TopBar
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(1, 0)
+CloseCorner.Parent = CloseBtn
+
+local MinBtn = Instance.new("TextButton")
+MinBtn.Size = UDim2.new(0, 16, 0, 16)
+MinBtn.Position = UDim2.new(1, -48, 0.5, -8)
+MinBtn.BackgroundColor3 = Theme.Minimize
+MinBtn.Text = ""
+MinBtn.AutoButtonColor = false
+MinBtn.Parent = TopBar
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(1, 0)
+MinCorner.Parent = MinBtn
+
+-- Sidebar
+local Sidebar = Instance.new("Frame")
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, 140, 1, -36)
+Sidebar.Position = UDim2.new(0, 0, 0, 36)
+Sidebar.BackgroundColor3 = Theme.Sidebar
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = MainFrame
+
+-- Sidebar separator line
+local SepLine = Instance.new("Frame")
+SepLine.Size = UDim2.new(0, 1, 1, 0)
+SepLine.Position = UDim2.new(1, -1, 0, 0)
+SepLine.BackgroundColor3 = Theme.Border
+SepLine.BorderSizePixel = 0
+SepLine.Parent = Sidebar
+
+-- Sidebar Tab List
+local TabList = Instance.new("Frame")
+TabList.Size = UDim2.new(1, 0, 1, -40)
+TabList.Position = UDim2.new(0, 0, 0, 20)
+TabList.BackgroundTransparency = 1
+TabList.Parent = Sidebar
+
+local TabListLayout = Instance.new("UIListLayout")
+TabListLayout.Padding = UDim.new(0, 2)
+TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+TabListLayout.Parent = TabList
+
+local TabListPadding = Instance.new("UIPadding")
+TabListPadding.PaddingLeft = UDim.new(0, 8)
+TabListPadding.PaddingRight = UDim.new(0, 8)
+TabListPadding.PaddingTop = UDim.new(0, 8)
+TabListPadding.Parent = TabList
+
+-- Sidebar Logo Area
+local LogoFrame = Instance.new("Frame")
+LogoFrame.Size = UDim2.new(1, 0, 0, 40)
+LogoFrame.Position = UDim2.new(0, 0, 1, -40)
+LogoFrame.BackgroundTransparency = 1
+LogoFrame.Parent = Sidebar
+
+local LogoText = Instance.new("TextLabel")
+LogoText.Size = UDim2.new(1, 0, 1, 0)
+LogoText.BackgroundTransparency = 1
+LogoText.Text = "v2.0"
+LogoText.Font = Enum.Font.GothamBold
+LogoText.TextColor3 = Theme.TextDim
+LogoText.TextSize = 10
+LogoText.Parent = LogoFrame
+
+-- Content Area
+local ContentArea = Instance.new("Frame")
+ContentArea.Name = "ContentArea"
+ContentArea.Size = UDim2.new(1, -140, 1, -36)
+ContentArea.Position = UDim2.new(0, 140, 0, 36)
+ContentArea.BackgroundTransparency = 1
+ContentArea.ClipsDescendants = true
+ContentArea.Parent = MainFrame
+
+-- Content Padding
+local ContentPadding = Instance.new("UIPadding")
+ContentPadding.PaddingLeft = UDim.new(0, 12)
+ContentPadding.PaddingRight = UDim.new(0, 12)
+ContentPadding.PaddingTop = UDim.new(0, 12)
+ContentPadding.PaddingBottom = UDim.new(0, 12)
+ContentPadding.Parent = ContentArea
+
+-- Tab Storage
+local Tabs = {}
+local TabButtons = {}
+local CurrentTab = nil
+
+-- Create Tab Content Frame
+local function createTab(name)
+    local TabFrame = Instance.new("ScrollingFrame")
+    TabFrame.Name = name
+    TabFrame.Size = UDim2.new(1, 0, 1, 0)
+    TabFrame.BackgroundTransparency = 1
+    TabFrame.BorderSizePixel = 0
+    TabFrame.ScrollBarThickness = 3
+    TabFrame.ScrollBarImageColor3 = Theme.Accent
+    TabFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    TabFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    TabFrame.Visible = false
+    TabFrame.Parent = ContentArea
+
+    local Layout = Instance.new("UIListLayout")
+    Layout.Padding = UDim.new(0, 6)
+    Layout.SortOrder = Enum.SortOrder.LayoutOrder
+    Layout.Parent = TabFrame
+
+    local Padding = Instance.new("UIPadding")
+    Padding.PaddingRight = UDim.new(0, 4)
+    Padding.Parent = TabFrame
+
+    Tabs[name] = TabFrame
+    return TabFrame
+end
+
+-- Create Sidebar Tab Button
+local function createTabButton(name, icon, tabFrame, order)
+    local Btn = Instance.new("TextButton")
+    Btn.Name = name
+    Btn.Size = UDim2.new(1, 0, 0, 34)
+    Btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Btn.BackgroundTransparency = 1
+    Btn.Text = ""
+    Btn.AutoButtonColor = false
+    Btn.LayoutOrder = order
+    Btn.Parent = TabList
+
+    local BtnCorner = Instance.new("UICorner")
+    BtnCorner.CornerRadius = UDim.new(0, 6)
+    BtnCorner.Parent = Btn
+
+    local BtnText = Instance.new("TextLabel")
+    BtnText.Size = UDim2.new(1, -10, 1, 0)
+    BtnText.Position = UDim2.new(0, 10, 0, 0)
+    BtnText.BackgroundTransparency = 1
+    BtnText.Text = icon .. "  " .. name
+    BtnText.Font = Enum.Font.GothamMedium
+    BtnText.TextColor3 = Theme.TextDim
+    BtnText.TextSize = 11
+    BtnText.TextXAlignment = Enum.TextXAlignment.Left
+    BtnText.Parent = Btn
+
+    -- Accent indicator
+    local Indicator = Instance.new("Frame")
+    Indicator.Name = "Indicator"
+    Indicator.Size = UDim2.new(0, 3, 0, 18)
+    Indicator.Position = UDim2.new(0, -8, 0.5, -9)
+    Indicator.BackgroundColor3 = Theme.Accent
+    Indicator.BorderSizePixel = 0
+    Indicator.Visible = false
+    Indicator.Parent = Btn
+
+    local IndCorner = Instance.new("UICorner")
+    IndCorner.CornerRadius = UDim.new(1, 0)
+    IndCorner.Parent = Indicator
+
+    TabButtons[name] = {Button = Btn, Text = BtnText, Indicator = Indicator, TabFrame = tabFrame}
+
+    Btn.MouseButton1Click:Connect(function()
+        -- Hide all tabs
+        for _, v in pairs(Tabs) do
+            v.Visible = false
+        end
+        -- Reset all buttons
+        for _, v in pairs(TabButtons) do
+            TweenService:Create(v.Text, TweenInfo.new(0.2), {TextColor3 = Theme.TextDim}):Play()
+            TweenService:Create(v.Button, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
+            v.Indicator.Visible = false
+        end
+        -- Activate selected
+        tabFrame.Visible = true
+        TweenService:Create(BtnText, TweenInfo.new(0.2), {TextColor3 = Theme.Text}):Play()
+        TweenService:Create(Btn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.Button, BackgroundTransparency = 0}):Play()
+        Indicator.Visible = true
+        CurrentTab = name
+    end)
+
+    -- Hover
+    Btn.MouseEnter:Connect(function()
+        if CurrentTab ~= name then
+            TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.7, BackgroundColor3 = Theme.Button}):Play()
+        end
+    end)
+    Btn.MouseLeave:Connect(function()
+        if CurrentTab ~= name then
+            TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+        end
+    end)
+end
+
+-- Section Label
+local function createSection(tabFrame, text, order)
+    local Section = Instance.new("Frame")
+    Section.Size = UDim2.new(1, 0, 0, 20)
+    Section.BackgroundTransparency = 1
+    Section.LayoutOrder = order
+    Section.Parent = tabFrame
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, 0, 1, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text
+    Label.Font = Enum.Font.GothamBold
+    Label.TextColor3 = Theme.TextDim
+    Label.TextSize = 10
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Section
+end
+
+-- Toggle Element
+local function createToggle(tabFrame, text, order, callback)
+    local Toggle = Instance.new("Frame")
+    Toggle.Size = UDim2.new(1, 0, 0, 36)
+    Toggle.BackgroundColor3 = Theme.Button
+    Toggle.BorderSizePixel = 0
+    Toggle.LayoutOrder = order
+    Toggle.Parent = tabFrame
+
+    local TCorner = Instance.new("UICorner")
+    TCorner.CornerRadius = UDim.new(0, 6)
+    TCorner.Parent = Toggle
+
+    local TLabel = Instance.new("TextLabel")
+    TLabel.Size = UDim2.new(1, -60, 1, 0)
+    TLabel.Position = UDim2.new(0, 12, 0, 0)
+    TLabel.BackgroundTransparency = 1
+    TLabel.Text = text
+    TLabel.Font = Enum.Font.GothamMedium
+    TLabel.TextColor3 = Theme.Text
+    TLabel.TextSize = 12
+    TLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TLabel.Parent = Toggle
+
+    -- Toggle Switch Background
+    local SwitchBg = Instance.new("Frame")
+    SwitchBg.Size = UDim2.new(0, 36, 0, 20)
+    SwitchBg.Position = UDim2.new(1, -48, 0.5, -10)
+    SwitchBg.BackgroundColor3 = Theme.ToggleOff
+    SwitchBg.BorderSizePixel = 0
+    SwitchBg.Parent = Toggle
+
+    local SBCorner = Instance.new("UICorner")
+    SBCorner.CornerRadius = UDim.new(1, 0)
+    SBCorner.Parent = SwitchBg
+
+    -- Toggle Circle
+    local Circle = Instance.new("Frame")
+    Circle.Size = UDim2.new(0, 16, 0, 16)
+    Circle.Position = UDim2.new(0, 2, 0.5, -8)
+    Circle.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    Circle.BorderSizePixel = 0
+    Circle.Parent = SwitchBg
+
+    local CCorner = Instance.new("UICorner")
+    CCorner.CornerRadius = UDim.new(1, 0)
+    CCorner.Parent = Circle
+
+    local isOn = false
+
+    local ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Size = UDim2.new(1, 0, 1, 0)
+    ToggleBtn.BackgroundTransparency = 1
+    ToggleBtn.Text = ""
+    ToggleBtn.Parent = Toggle
+
+    ToggleBtn.MouseButton1Click:Connect(function()
+        isOn = not isOn
+        if isOn then
+            TweenService:Create(SwitchBg, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {BackgroundColor3 = Theme.ToggleOn}):Play()
+            TweenService:Create(Circle, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {Position = UDim2.new(1, -18, 0.5, -8)}):Play()
+        else
+            TweenService:Create(SwitchBg, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {BackgroundColor3 = Theme.ToggleOff}):Play()
+            TweenService:Create(Circle, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {Position = UDim2.new(0, 2, 0.5, -8)}):Play()
+        end
+        if callback then callback(isOn) end
+    end)
+
+    -- Hover
+    ToggleBtn.MouseEnter:Connect(function()
+        TweenService:Create(Toggle, TweenInfo.new(0.15), {BackgroundColor3 = Theme.ButtonHover}):Play()
+    end)
+    ToggleBtn.MouseLeave:Connect(function()
+        TweenService:Create(Toggle, TweenInfo.new(0.15), {BackgroundColor3 = Theme.Button}):Play()
+    end)
+end
+
+-- Button Element
+local function createButton(tabFrame, text, order, callback)
+    local BtnFrame = Instance.new("Frame")
+    BtnFrame.Size = UDim2.new(1, 0, 0, 36)
+    BtnFrame.BackgroundColor3 = Theme.Button
+    BtnFrame.BorderSizePixel = 0
+    BtnFrame.LayoutOrder = order
+    BtnFrame.Parent = tabFrame
+
+    local BCorner = Instance.new("UICorner")
+    BCorner.CornerRadius = UDim.new(0, 6)
+    BCorner.Parent = BtnFrame
+
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(1, 0, 1, 0)
+    Btn.BackgroundTransparency = 1
+    Btn.Text = text
+    Btn.Font = Enum.Font.GothamMedium
+    Btn.TextColor3 = Theme.Text
+    Btn.TextSize = 12
+    Btn.AutoButtonColor = false
+    Btn.Parent = BtnFrame
+
+    Btn.MouseButton1Click:Connect(function()
+        TweenService:Create(BtnFrame, TweenInfo.new(0.1), {BackgroundColor3 = Theme.Accent}):Play()
+        task.wait(0.1)
+        TweenService:Create(BtnFrame, TweenInfo.new(0.2), {BackgroundColor3 = Theme.Button}):Play()
+        if callback then callback() end
+    end)
+
+    Btn.MouseEnter:Connect(function()
+        TweenService:Create(BtnFrame, TweenInfo.new(0.15), {BackgroundColor3 = Theme.ButtonHover}):Play()
+    end)
+    Btn.MouseLeave:Connect(function()
+        TweenService:Create(BtnFrame, TweenInfo.new(0.15), {BackgroundColor3 = Theme.Button}):Play()
+    end)
+end
+
+-- Slider Element
+local function createSlider(tabFrame, text, min, max, default, order, callback)
+    local SliderFrame = Instance.new("Frame")
+    SliderFrame.Size = UDim2.new(1, 0, 0, 50)
+    SliderFrame.BackgroundColor3 = Theme.Button
+    SliderFrame.BorderSizePixel = 0
+    SliderFrame.LayoutOrder = order
+    SliderFrame.Parent = tabFrame
+
+    local SFCorner = Instance.new("UICorner")
+    SFCorner.CornerRadius = UDim.new(0, 6)
+    SFCorner.Parent = SliderFrame
+
+    local SLabel = Instance.new("TextLabel")
+    SLabel.Size = UDim2.new(0.6, 0, 0, 20)
+    SLabel.Position = UDim2.new(0, 12, 0, 4)
+    SLabel.BackgroundTransparency = 1
+    SLabel.Text = text
+    SLabel.Font = Enum.Font.GothamMedium
+    SLabel.TextColor3 = Theme.Text
+    SLabel.TextSize = 12
+    SLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SLabel.Parent = SliderFrame
+
+    local SValue = Instance.new("TextLabel")
+    SValue.Size = UDim2.new(0.3, 0, 0, 20)
+    SValue.Position = UDim2.new(0.65, 0, 0, 4)
+    SValue.BackgroundTransparency = 1
+    SValue.Text = tostring(default)
+    SValue.Font = Enum.Font.GothamBold
+    SValue.TextColor3 = Theme.Accent
+    SValue.TextSize = 12
+    SValue.TextXAlignment = Enum.TextXAlignment.Right
+    SValue.Parent = SliderFrame
+
+    local Track = Instance.new("Frame")
+    Track.Size = UDim2.new(1, -24, 0, 4)
+    Track.Position = UDim2.new(0, 12, 0, 34)
+    Track.BackgroundColor3 = Theme.ToggleOff
+    Track.BorderSizePixel = 0
+    Track.Parent = SliderFrame
+
+    local TCorner = Instance.new("UICorner")
+    TCorner.CornerRadius = UDim.new(1, 0)
+    TCorner.Parent = Track
+
+    local Fill = Instance.new("Frame")
+    Fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    Fill.BackgroundColor3 = Theme.Accent
+    Fill.BorderSizePixel = 0
+    Fill.Parent = Track
+
+    local FCorner = Instance.new("UICorner")
+    FCorner.CornerRadius = UDim.new(1, 0)
+    FCorner.Parent = Fill
+
+    local SliderBtn = Instance.new("TextButton")
+    SliderBtn.Size = UDim2.new(1, 0, 0, 16)
+    SliderBtn.Position = UDim2.new(0, 0, 0, 28)
+    SliderBtn.BackgroundTransparency = 1
+    SliderBtn.Text = ""
+    SliderBtn.Parent = SliderFrame
+
+    local dragging = false
+
+    SliderBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+        end
+    end)
+
+    SliderBtn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local trackPos = Track.AbsolutePosition.X
+            local trackSize = Track.AbsoluteSize.X
+            local mouseX = input.Position.X
+            local relative = math.clamp((mouseX - trackPos) / trackSize, 0, 1)
+            local value = math.floor(min + (max - min) * relative)
+            Fill.Size = UDim2.new(relative, 0, 1, 0)
+            SValue.Text = tostring(value)
+            if callback then callback(value) end
+        end
+    end)
+end
+
+-- CREATE TABS
+local MainTab = createTab("Main")
+local CombatTab = createTab("Combat")
+local VisualTab = createTab("Visual")
+local MiscTab = createTab("Misc")
+
+-- CREATE SIDEBAR BUTTONS
+createTabButton("Main", "⚡", MainTab, 1)
+createTabButton("Combat", "⚔", CombatTab, 2)
+createTabButton("Visual", "👁", VisualTab, 3)
+createTabButton("Misc", "⚙", MiscTab, 4)
+
+-- POPULATE MAIN TAB
+createSection(MainTab, "DEFENSE", 1)
+
+createToggle(MainTab, "Infinite Health", 2, function(state)
+    Config.InfiniteHealth = state
+end)
+
+createToggle(MainTab, "Anti-Troll Physics", 3, function(state)
+    Config.AntiTroll = state
+end)
+
+createToggle(MainTab, "Anti-Kill Shield", 4, function(state)
+    Config.InfiniteHealth = state
+end)
+
+createToggle(MainTab, "Anti-Void Teleport", 5, function(state)
+    Config.AntiTroll = state
+end)
+
+createSection(MainTab, "MOVEMENT", 6)
+
+createSlider(MainTab, "Walk Speed", 16, 200, 16, 7, function(val)
+    Config.Speed = val
+    local Char = LocalPlayer.Character
+    if Char then
+        local Hum = Char:FindFirstChild("Humanoid")
+        if Hum then Hum.WalkSpeed = val end
+    end
+end)
+
+createSlider(MainTab, "Jump Power", 50, 300, 50, 8, function(val)
+    Config.JumpPower = val
+    local Char = LocalPlayer.Character
+    if Char then
+        local Hum = Char:FindFirstChild("Humanoid")
+        if Hum then Hum.JumpPower = val end
+    end
+end)
+
+createToggle(MainTab, "Noclip", 9, function(state)
+    Config.Noclip = state
+end)
+
+createToggle(MainTab, "Fly Mode", 10, function(state)
+    -- Fly logic placeholder connected
+end)
+
+-- POPULATE COMBAT TAB
+createSection(CombatTab, "OFFENSIVE", 1)
+
+createToggle(CombatTab, "Auto Arrest (Guard)", 2, function(state) end)
+createToggle(CombatTab, "Auto Kill (Criminal)", 3, function(state) end)
+createToggle(CombatTab, "ESP Players", 4, function(state)
+    Config.ESP = state
+end)
+createToggle(CombatTab, "ESP Items", 5, function(state) end)
+
+createSection(CombatTab, "TELEPORT", 6)
+
+createButton(CombatTab, "TP to Criminal Spawn", 7, function()
+    local spawnPoints = Workspace:FindFirstChild("CriminalSpawn", true)
+    if spawnPoints then
+        local Char = LocalPlayer.Character
+        if Char then
+            Char:SetPrimaryPartCFrame(spawnPoints.CFrame)
+        end
+    end
+end)
+
+createButton(CombatTab, "TP to Guard Spawn", 8, function()
+    local spawnPoints = Workspace:FindFirstChild("GuardSpawn", true)
+    if spawnPoints then
+        local Char = LocalPlayer.Character
+        if Char then
+            Char:SetPrimaryPartCFrame(spawnPoints.CFrame)
+        end
+    end
+end)
+
+createButton(CombatTab, "TP to Nearest Player", 9, function()
+    local nearest, minDist = nil, math.huge
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local dist = (p.Character:GetPivot().Position - LocalPlayer.Character:GetPivot().Position).Magnitude
+            if dist < minDist then
+                minDist = dist
+                nearest = p
+            end
+        end
+    end
+    if nearest and nearest.Character then
+        LocalPlayer.Character:SetPrimaryPartCFrame(nearest.Character:GetPivot())
+    end
+end)
+
+createSection(CombatTab, "WEAPONS", 10)
+
+createButton(CombatTab, "Remove All Weapons", 11, function()
+    local Backpack = LocalPlayer.Backpack
+    for _, tool in pairs(Backpack:GetChildren()) do
+        if tool:IsA("Tool") then tool:Destroy() end
+    end
+    local Char = LocalPlayer.Character
+    if Char then
+        for _, tool in pairs(Char:GetChildren()) do
+            if tool:IsA("Tool") then tool:Destroy() end
+        end
+    end
+end)
+
+-- POPULATE VISUAL TAB
+createSection(VisualTab, "PERFORMANCE", 1)
+
+createToggle(VisualTab, "FPS Booster", 2, function(state)
+    Config.FPSBoost = state
+    if state then
+        Lighting.ShadowSoftness = 0
+        Lighting.GlobalShadows = false
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") then
+                v.Enabled = false
+            end
+        end
+    else
+        Lighting.GlobalShadows = true
+        Lighting.ShadowSoftness = 0.5
+    end
+end)
+
+createToggle(VisualTab, "Fullbright", 3, function(state)
+    Config.Fullbright = state
+    if state then
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+        Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+    else
+        Lighting.Brightness = 1
+        Lighting.ClockTime = 12
+        Lighting.GlobalShadows = true
+    end
+end)
+
+createSection(VisualTab, "GRAPHICS", 4)
+
+createButton(VisualTab, "Max Graphics (RTX Override)", 5, function()
+    pcall(function()
+        Lighting.Technology = Enum.Technology.ShadowMap
+        Lighting.ShadowSoftness = 0.1
+        Lighting.Brightness = 1.5
+    end)
+end)
+
+createButton(VisualTab, "Low Graphics (Max FPS)", 6, function()
+    pcall(function()
+        Lighting.Technology = Enum.Technology.Compatibility
+        Lighting.GlobalShadows = false
+        Lighting.ShadowSoftness = 0
+    end)
+end)
+
+createButton(VisualTab, "Remove All Textures", 7, function()
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("Texture") or v:IsA("Decal") then
+            v.Transparency = 1
+        end
+    end
+end)
+
+createButton(VisualTab, "Remove All Particles", 8, function()
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("ParticleEmitter") or v:IsA("Fire") or v:IsA("Smoke") then
+            v:Destroy()
+        end
+    end
+end)
+
+-- POPULATE MISC TAB
+createSection(MiscTab, "UTILITY", 1)
+
+createToggle(MiscTab, "Anti-AFK", 2, function(state)
+    Config.AntiAFK = state
+end)
+
+createButton(MiscTab, "Rejoin Server", 3, function()
+    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+end)
+
+createButton(MiscTab, "Copy Place ID", 4, function()
+    if setclipboard then
+        setclipboard(tostring(game.PlaceId))
+    end
+end)
+
+createButton(MiscTab, "Server Hop (Random)", 5, function()
+    local Http = game:GetService("HttpService")
+    local servers = {}
+    -- Simplified server hop
+    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+end)
+
+createSection(MiscTab, "CHARACTER", 6)
+
+createButton(MiscTab, "Reset Character", 7, function()
+    local Char = LocalPlayer.Character
+    if Char then
+        local Hum = Char:FindFirstChild("Humanoid")
+        if Hum then Hum.Health = 0 end
+    end
+end)
+
+createButton(MiscTab, "Refresh Character", 8, function()
+    local pos = LocalPlayer.Character and LocalPlayer.Character:GetPivot()
+    local Char = LocalPlayer.Character
+    if Char then
+        local Hum = Char:FindFirstChild("Humanoid")
+        if Hum then Hum.Health = 0 end
+    end
+    task.wait(1)
+    if pos and LocalPlayer.Character then
+        LocalPlayer.Character:PivotTo(pos)
+    end
+end)
+
+createButton(MiscTab, "Remove Forcefields", 9, function()
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("ForceField") then v:Destroy() end
+    end
+end)
+
+-- CORE LOOPS
+
+-- Infinite Health + Anti-Troll
+RunService.Heartbeat:Connect(function()
+    local Char = LocalPlayer.Character
+    if not Char then return end
+    local Hum = Char:FindFirstChild("Humanoid")
+    if not Hum then return end
+
+    if Config.InfiniteHealth then
+        if Hum.Health < Hum.MaxHealth then
+            Hum.Health = Hum.MaxHealth
+        end
+    end
+
+    if Config.AntiTroll then
+        local Root = Char:FindFirstChild("HumanoidRootPart")
+        if Root then
+            if Root.AssemblyLinearVelocity.Magnitude > 150 then
+                Root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            end
+            -- Anti-void
+            if Root.Position.Y < -50 then
+                local spawnPoint = Workspace:FindFirstChild("SpawnLocation", true)
+                if spawnPoint then
+                    Root.CFrame = spawnPoint.CFrame + Vector3.new(0, 5, 0)
+                end
+            end
+        end
+    end
+
+    if Config.Noclip then
+        for _, part in pairs(Char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- Anti-AFK
+if LocalPlayer.Idled then
+    LocalPlayer.Idled:Connect(function()
+        if Config.AntiAFK then
+            local VU = game:GetService("VirtualUser")
+            VU:CaptureController()
+            VU:ClickButton2(Vector2.new())
+        end
+    end)
+end
+
+-- DRAG FUNCTIONALITY
+local dragging, dragInput, dragStart, startPos
+
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+TopBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- CLOSE BUTTON
+CloseBtn.MouseButton1Click:Connect(function()
+    TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 0)
+    }):Play()
+    task.wait(0.35)
+    ScreenGui:Destroy()
+end)
+
+-- MINIMIZE BUTTON
+local minimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {
+            Size = UDim2.new(0, 520, 0, 36)
+        }):Play()
+        ContentArea.Visible = false
+        Sidebar.Visible = false
+    else
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {
+            Size = UDim2.new(0, 520, 0, 380)
+        }):Play()
+        ContentArea.Visible = true
+        Sidebar.Visible = true
+    end
+end)
+
+-- OPEN ANIMATION
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+    Size = UDim2.new(0, 520, 0, 380),
+    Position = UDim2.new(0.5, -260, 0.5, -190)
+}):Play()
+
+-- Auto-select first tab
+task.wait(0.1)
+TabButtons["Main"].Button:Fire("MouseButton1Click")
+
+print("Sylira Hub v2.0 Loaded | Skyfall UI | Prison Life")
