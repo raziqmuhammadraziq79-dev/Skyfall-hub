@@ -1,0 +1,311 @@
+-- Skyfall-hub [NATIVE V2] | VORD Edition [FIXED LAYOUT]
+-- Fix: Vertical ListLayout + Floating Toggle Icon + Proper Close Button
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+
+-- GLOBAL STATE
+_G.Skyfall = {
+    GodMode = false,
+    InfJump = false,
+    Flying = false,
+    NightVision = false,
+    WalkSpeed = 16,
+    JumpPower = 50,
+    Visible = true
+}
+
+-- CLEANUP PREVIOUS INSTANCES
+if game.CoreGui:FindFirstChild("SkyfallNativeUI") then 
+    game.CoreGui:FindFirstChild("SkyfallNativeUI"):Destroy() 
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SkyfallNativeUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = game.CoreGui
+
+-- FLOATING ICON (For Hide/Show without Re-execute)
+local FloatIcon = Instance.new("ImageButton")
+FloatIcon.Size = UDim2.new(0, 45, 0, 45)
+FloatIcon.Position = UDim2.new(0, 10, 0.5, -22)
+FloatIcon.BackgroundTransparency = 1
+FloatIcon.Image = "rbxassetid://15393268968" -- Ninja/Premium Icon
+FloatIcon.Visible = false
+FloatIcon.Parent = ScreenGui
+
+FloatIcon.MouseButton1Click:Connect(function()
+    _G.Skyfall.Visible = true
+    MainFrame.Visible = true
+    FloatIcon.Visible = false
+    TweenService:Create(MainFrame, TweenInfo.new(0.3), {Position = UDim2.new(0.5, -190, 0.5, -130)}):Play()
+end)
+
+-- MAIN FRAME
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 360, 0, 280)
+MainFrame.Position = UDim2.new(0.5, -180, 0.5, -140)
+MainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+
+-- TITLE BAR
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 38)
+TitleBar.BackgroundColor3 = Color3.fromRGB(18, 18, 26)
+TitleBar.BorderSizePixel = 0
+TitleBar.ZIndex = 10
+TitleBar.Parent = MainFrame
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
+
+local TitleText = Instance.new("TextLabel", TitleBar)
+TitleText.Size = UDim2.new(1, -90, 1, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "SKYFALL-HUB [NATIVE]"
+TitleText.TextColor3 = Color3.fromRGB(160, 80, 255)
+TitleText.Font = Enum.Font.GothamBold
+TitleText.TextSize = 15
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.Position = UDim2.new(0, 12, 0, 0)
+TitleText.ZIndex = 11
+
+-- DRAG LOGIC
+local Dragging, DragStart, StartPos
+TitleBar.InputBegan:Connect(function(Input)
+    if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+        Dragging = true; DragStart = Input.Position; StartPos = MainFrame.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(Input)
+    if Dragging and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch) then
+        local Delta = Input.Position - DragStart
+        MainFrame.Position = UDim2.new(StartPos.X.Scale, StartPos.X.Offset + Delta.X, StartPos.Y.Scale, StartPos.Y.Offset + Delta.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(Input)
+    if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then Dragging = false end
+end)
+
+-- BUTTONS: HIDE [-] & CLOSE [X]
+local function CreateTopBtn(Text, Pos, Color, Callback)
+    local Btn = Instance.new("TextButton", TitleBar)
+    Btn.Size = UDim2.new(0, 32, 0, 32)
+    Btn.Position = Pos
+    Btn.BackgroundTransparency = 1
+    Btn.Text = Text
+    Btn.TextColor3 = Color
+    Btn.Font = Enum.Font.GothamBold
+    Btn.TextSize = 18
+    Btn.ZIndex = 12
+    Btn.MouseButton1Click:Connect(Callback)
+    return Btn
+end
+
+-- MINIMIZE [-]
+CreateTopBtn("−", UDim2.new(1, -70, 0, 3), Color3.fromRGB(200, 200, 200), function()
+    _G.Skyfall.Visible = false
+    MainFrame.Visible = false
+    FloatIcon.Visible = true
+    TweenService:Create(FloatIcon, TweenInfo.new(0.3), {Position = UDim2.new(0, 10, 0.5, -22)}):Play()
+end)
+
+-- CLOSE [X]
+CreateTopBtn("", UDim2.new(1, -35, 0, 3), Color3.fromRGB(255, 80, 80), function()
+    ScreenGui:Destroy()
+end)
+
+-- CONTENT AREA WITH LISTLAYOUT (THE FIX)
+local Content = Instance.new("ScrollingFrame", MainFrame)
+Content.Size = UDim2.new(1, -10, 1, -48)
+Content.Position = UDim2.new(0, 5, 0, 43)
+Content.BackgroundTransparency = 1
+Content.ScrollBarThickness = 4
+Content.CanvasSize = UDim2.new(0, 0, 0, 0)
+Content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Content.ScrollBarImageColor3 = Color3.fromRGB(160, 80, 255)
+
+-- CRITICAL FIX: UIListLayout for Vertical Stacking
+local ListLayout = Instance.new("UIListLayout", Content)
+ListLayout.Padding = UDim.new(0, 6)
+ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local Padding = Instance.new("UIPadding", Content)
+Padding.PaddingBottom = UDim.new(0, 10)
+Padding.PaddingTop = UDim.new(0, 5)
+
+-- HELPER: TOGGLE
+local function AddToggle(Name, Default, Callback)
+    local Container = Instance.new("Frame", Content)
+    Container.Size = UDim2.new(1, 0, 0, 32)
+    Container.BackgroundTransparency = 1
+    Container.LayoutOrder = #Content:GetChildren()
+    
+    local Label = Instance.new("TextLabel", Container)
+    Label.Size = UDim2.new(1, -45, 1, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = Name
+    Label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    Label.Font = Enum.Font.GothamMedium
+    Label.TextSize = 13
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local ToggleBg = Instance.new("Frame", Container)
+    ToggleBg.Size = UDim2.new(0, 34, 0, 16)
+    ToggleBg.Position = UDim2.new(1, -34, 0.5, -8)
+    ToggleBg.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    ToggleBg.BorderSizePixel = 0
+    Instance.new("UICorner", ToggleBg).CornerRadius = UDim.new(1, 0)
+    
+    local Knob = Instance.new("Frame", ToggleBg)
+    Knob.Size = UDim2.new(0, 12, 0, 12)
+    Knob.Position = UDim2.new(0, 2, 0.5, -6)
+    Knob.BackgroundColor3 = Color3.fromRGB(140, 140, 140)
+    Knob.BorderSizePixel = 0
+    Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
+    
+    local Active = Default
+    local function Update()
+        ToggleBg.BackgroundColor3 = Active and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 35, 45)
+        Knob.Position = Active and UDim2.new(0, 20, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
+        Knob.BackgroundColor3 = Active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(140, 140, 140)
+    end
+    Update()
+    
+    Instance.new("TextButton", Container).Size = UDim2.new(1, 0, 1, 0)
+    Container:FindFirstChild("TextButton").BackgroundTransparency = 1
+    Container:FindFirstChild("TextButton").Text = ""
+    Container:FindFirstChild("TextButton").MouseButton1Click:Connect(function()
+        Active = not Active; Update(); Callback(Active)
+    end)
+end
+
+-- HELPER: SLIDER
+local function AddSlider(Name, Min, Max, Default, Callback)
+    local Container = Instance.new("Frame", Content)
+    Container.Size = UDim2.new(1, 0, 0, 40)
+    Container.BackgroundTransparency = 1
+    
+    local Label = Instance.new("TextLabel", Container)
+    Label.Size = UDim2.new(1, -10, 0, 14)
+    Label.BackgroundTransparency = 1
+    Label.Text = Name .. ": " .. tostring(Default)
+    Label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    Label.Font = Enum.Font.GothamMedium
+    Label.TextSize = 12
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local Track = Instance.new("Frame", Container)
+    Track.Size = UDim2.new(1, -10, 0, 5)
+    Track.Position = UDim2.new(0, 5, 0, 22)
+    Track.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    Track.BorderSizePixel = 0
+    Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
+    
+    local Fill = Instance.new("Frame", Track)
+    Fill.Size = UDim2.new((Default - Min) / (Max - Min), 0, 1, 0)
+    Fill.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+    Fill.BorderSizePixel = 0
+    Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
+    
+    local Thumb = Instance.new("Frame", Track)
+    Thumb.Size = UDim2.new(0, 10, 0, 10)
+    Thumb.Position = UDim2.new((Default - Min) / (Max - Min), -5, 0.5, -5)
+    Thumb.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Thumb.BorderSizePixel = 0
+    Instance.new("UICorner", Thumb).CornerRadius = UDim.new(1, 0)
+    
+    local Val = Default; local Updating = false
+    local function Update(X)
+        local Rel = math.clamp((X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+        Val = math.floor(Min + (Max - Min) * Rel + 0.5)
+        Fill.Size = UDim2.new(Rel, 0, 1, 0)
+        Thumb.Position = UDim2.new(Rel, -5, 0.5, -5)
+        Label.Text = Name .. ": " .. tostring(Val)
+        if not Updating then Callback(Val) end
+    end
+    
+    Thumb.InputBegan:Connect(function(I) if I.UserInputType == Enum.UserInputType.MouseButton1 or I.UserInputType == Enum.UserInputType.Touch then Updating = true end end)
+    Thumb.InputEnded:Connect(function(I) if I.UserInputType == Enum.UserInputType.MouseButton1 or I.UserInputType == Enum.UserInputType.Touch then Updating = false end end)
+    UserInputService.InputChanged:Connect(function(I)
+        if Updating and (I.UserInputType == Enum.UserInputType.MouseMovement or I.UserInputType == Enum.UserInputType.Touch) then Update(I.Position.X) end
+    end)
+end
+
+-- ==================== FEATURES ====================
+
+AddToggle("God Mode (Anti-Kill)", false, function(v)
+    _G.Skyfall.GodMode = v
+    if v and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.HealthChanged:Connect(function()
+            if _G.Skyfall.GodMode then LocalPlayer.Character.Humanoid.Health = 100 end
+        end)
+    end
+end)
+
+AddToggle("Infinite Jump", false, function(v) _G.Skyfall.InfJump = v end)
+UserInputService.JumpRequest:Connect(function()
+    if _G.Skyfall.InfJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+AddToggle("Fly + Noclip [E]", false, function(v) _G.Skyfall.Flying = v end)
+RunService.RenderStepped:Connect(function()
+    if _G.Skyfall.Flying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local Root = LocalPlayer.Character.HumanoidRootPart
+        Root.Velocity = workspace.CurrentCamera.CFrame.LookVector * 50
+        Root.CanCollide = false
+    elseif LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.Character.HumanoidRootPart.CanCollide = true
+    end
+end)
+
+AddToggle("Night Vision", false, function(v)
+    _G.Skyfall.NightVision = v
+    local L = game:GetService("Lighting")
+    if v then _G.OB=L.Brightness; _G.OT=L.ClockTime; L.Brightness=2; L.ClockTime=14
+    else L.Brightness=_G.OB or 2; L.ClockTime=_G.OT or 14 end
+end)
+
+AddSlider("WalkSpeed", 16, 200, 16, function(v)
+    _G.Skyfall.WalkSpeed = v
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = v
+    end
+end)
+
+AddSlider("JumpPower", 50, 300, 50, function(v)
+    _G.Skyfall.JumpPower = v
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.JumpPower = v
+    end
+end)
+
+-- NOTIFICATION
+local function Notify(Msg)
+    local N = Instance.new("Frame")
+    N.Size = UDim2.new(0, 220, 0, 40)
+    N.Position = UDim2.new(0.5, -110, 1, -60)
+    N.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
+    N.BorderSizePixel = 0; N.Parent = ScreenGui
+    Instance.new("UICorner", N).CornerRadius = UDim.new(0, 8)
+    
+    local T = Instance.new("TextLabel", N)
+    T.Size = UDim2.new(1, 0, 1, 0); T.BackgroundTransparency = 1
+    T.Text = Msg; T.TextColor3 = Color3.fromRGB(160, 80, 255)
+    T.Font = Enum.Font.GothamMedium; T.TextSize = 13
+    
+    TweenService:Create(N, TweenInfo.new(0.3), {Position = UDim2.new(0.5, -110, 1, -80)}):Play()
+    task.delay(2.5, function()
+        TweenService:Create(N, TweenInfo.new(0.3), {Position = UDim2.new(0.5, -110, 1, -60)}):Play()
+        task.wait(0.3); N:Destroy()
+    end)
+end
+
+Notify("Skyfall-hub Native V2 Loaded ❄️")
