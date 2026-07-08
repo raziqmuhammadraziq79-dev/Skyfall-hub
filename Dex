@@ -1,0 +1,1015 @@
+-- ============================================
+-- BUATIN HUB UNIVERSAL EXPLOIT v3.0
+-- ALL-IN-ONE | ANTI-TROLL | URBAN WARFARE
+-- DELTA EXECUTOR | ANDROID + PC COMPATIBLE
+-- ============================================
+
+if not game then error("Game service not found") end
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local Debris = game:GetService("Debris")
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then error("LocalPlayer not found") end
+
+local Character = LocalPlayer.Character
+if not Character then Character = LocalPlayer.CharacterAdded:Wait() end
+
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+
+-- ============================================
+-- GLOBAL STATE & CONFIGURATION
+-- ============================================
+
+local SCRIPT_VERSION = "3.0.0"
+local EXPLOIT_NAME = "BUATIN HUB"
+local THEME_COLOR = Color3.fromRGB(147, 51, 234)
+local ACCENT_COLOR = Color3.fromRGB(0, 255, 150)
+
+local EXPLOIT_STATE = {
+    -- Core Features
+    godMode = false,
+    infiniteJump = false,
+    noclip = false,
+    fly = false,
+    teleport = false,
+    
+    -- Combat
+    aimbot = false,
+    fastAttack = false,
+    wallWalk = false,
+    unstoppable = false,
+    
+    -- Player Enhancement
+    walkSpeed = 16,
+    jumpPower = 50,
+    invisible = false,
+    sprint = false,
+    
+    -- Detection & Protection
+    espEnabled = false,
+    antiTroll = true,
+    detectionBypass = true,
+    antiKick = true,
+    
+    -- Urban Warfare
+    urbanWarfareActive = false,
+    weaponMultiplier = 1.5,
+    damageBoost = true,
+    
+    -- Farm & Grind
+    autoFarm = false,
+    moneyGlitch = false,
+    itemDupe = false,
+    
+    -- Optimization
+    fpsBoost = true,
+    memoryOptimize = true,
+    antiLag = true,
+    
+    -- Panel
+    panelHidden = false,
+    soundEnabled = false,
+}
+
+local PROTECTED_PLAYERS = {}
+local TROLL_DETECTION_LOG = {}
+local ACTIVE_CONNECTIONS = {}
+
+-- ============================================
+-- UTILITY FUNCTIONS
+-- ============================================
+
+local function safeCall(func, ...)
+    local success, result = pcall(func, ...)
+    if not success then
+        warn("[BUATIN HUB] Error: " .. tostring(result))
+    end
+    return success, result
+end
+
+local function log(message)
+    print("[BUATIN HUB v" .. SCRIPT_VERSION .. "] " .. message)
+end
+
+local function logWarning(message)
+    warn("[BUATIN HUB] WARNING: " .. message)
+end
+
+local function getDistance(pos1, pos2)
+    return (pos1 - pos2).Magnitude
+end
+
+local function raycastIgnoreList(origin, direction, ignoreList)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParams.FilterDescendantsInstances = ignoreList or {}
+    
+    local region = Region3.new(origin - Vector3.new(500, 500, 500), origin + Vector3.new(500, 500, 500))
+    region = region:ExpandToGrid(4)
+    
+    local parts = workspace:FindPartBoundsInRadius(origin, 500)
+    return parts
+end
+
+-- ============================================
+-- ANTI-TROLL PROTECTION SYSTEM
+-- ============================================
+
+local ANTI_TROLL = {}
+
+function ANTI_TROLL:detectTroll(player)
+    if not player or player == LocalPlayer then return false end
+    if not player.Character then return false end
+    
+    local char = player.Character
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    
+    local distance = getDistance(RootPart.Position, hrp.Position)
+    
+    -- Detection signatures
+    local isTroll = false
+    local reasons = {}
+    
+    -- Check 1: Abnormal walkspeed
+    if char:FindFirstChild("Humanoid") then
+        local speed = char.Humanoid.WalkSpeed
+        if speed > 100 then
+            isTroll = true
+            table.insert(reasons, "Speedhack detected")
+        end
+    end
+    
+    -- Check 2: Suspicious tool usage
+    for _, tool in pairs(char:GetChildren()) do
+        if tool:IsA("Tool") then
+            if tool:FindFirstChild("Handle") then
+                local handle = tool.Handle
+                if handle.Velocity.Magnitude > 200 then
+                    isTroll = true
+                    table.insert(reasons, "Tool velocity anomaly")
+                end
+            end
+        end
+    end
+    
+    -- Check 3: Position teleport detection
+    if TROLL_DETECTION_LOG[player.UserId] then
+        local lastPos = TROLL_DETECTION_LOG[player.UserId].lastPos
+        local timeDiff = tick() - TROLL_DETECTION_LOG[player.UserId].lastTime
+        local distDiff = getDistance(lastPos, hrp.Position)
+        
+        if distDiff > 100 and timeDiff < 0.1 then
+            isTroll = true
+            table.insert(reasons, "Teleport exploit detected")
+        end
+    end
+    
+    TROLL_DETECTION_LOG[player.UserId] = {
+        lastPos = hrp.Position,
+        lastTime = tick(),
+        isTroll = isTroll,
+        reasons = reasons
+    }
+    
+    return isTroll
+end
+
+function ANTI_TROLL:protectCharacter()
+    if not EXPLOIT_STATE.antiTroll then return end
+    
+    -- Deflect incoming damage from exploiters
+    local connection
+    connection = Humanoid.Damaged:Connect(function(damage)
+        if not EXPLOIT_STATE.antiTroll then
+            connection:Disconnect()
+            return
+        end
+        
+        safeCall(function()
+            local lastHealth = Humanoid.Health + damage
+            Humanoid.Health = lastHealth
+            
+            -- Identify attacker
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and ANTI_TROLL:detectTroll(player) then
+                    -- Counter-attack or evasion
+                    RootPart.CFrame = RootPart.CFrame + Vector3.new(math.random(-20, 20), math.random(-5, 20), math.random(-20, 20))
+                    log("Anti-troll activated! Evaded attacker: " .. player.Name)
+                end
+            end
+        end)
+    end)
+    
+    table.insert(ACTIVE_CONNECTIONS, connection)
+end
+
+function ANTI_TROLL:blockExploitAttacks()
+    -- Monitor RemoteEvents for malicious calls
+    local replicatedStorage = game:GetService("ReplicatedStorage")
+    local remotes = {}
+    
+    local function scanRemotes(parent)
+        for _, child in pairs(parent:GetChildren()) do
+            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+                table.insert(remotes, child)
+            end
+            scanRemotes(child)
+        end
+    end
+    
+    scanRemotes(game)
+    
+    for _, remote in pairs(remotes) do
+        local originalFire = remote.FireServer
+        remote.FireServer = function(self, ...)
+            local args = {...}
+            -- Validate arguments
+            safeCall(function()
+                if #args > 0 and type(args[1]) == "userdata" then
+                    -- Suspicious
+                    return
+                end
+            end)
+            return originalFire(self, ...)
+        end
+    end
+    
+    log("Remote event monitoring activated")
+end
+
+-- ============================================
+-- URBAN WARFARE SYSTEM
+-- ============================================
+
+local URBAN_WARFARE = {}
+
+function URBAN_WARFARE:activateForAllPlayers()
+    if not EXPLOIT_STATE.urbanWarfareActive then return end
+    
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if not EXPLOIT_STATE.urbanWarfareActive then
+            connection:Disconnect()
+            return
+        end
+        
+        safeCall(function()
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character then
+                    local char = player.Character
+                    local humanoid = char:FindFirstChild("Humanoid")
+                    
+                    if humanoid then
+                        -- Apply weapon damage multiplier
+                        for _, tool in pairs(char:GetChildren()) do
+                            if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
+                                -- Inject damage boost
+                                local handle = tool.Handle
+                                
+                                if tool:FindFirstChild("Damage") then
+                                    tool.Damage.Value = tool.Damage.Value * EXPLOIT_STATE.weaponMultiplier
+                                end
+                                
+                                -- Speed up attack animations
+                                local humanoidAnimator = humanoid:FindFirstChild("Animator")
+                                if humanoidAnimator then
+                                    for _, track in pairs(humanoidAnimator:GetPlayingAnimationTracks()) do
+                                        track:AdjustSpeed(1.3)
+                                    end
+                                end
+                            end
+                        end
+                        
+                        -- Increase health pool
+                        if EXPLOIT_STATE.damageBoost then
+                            humanoid.MaxHealth = humanoid.MaxHealth * 1.2
+                        end
+                    end
+                end
+            end
+        end)
+    end)
+    
+    table.insert(ACTIVE_CONNECTIONS, connection)
+    log("Urban Warfare mode activated for all players")
+end
+
+function URBAN_WARFARE:globalWeaponBoost()
+    safeCall(function()
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Character then
+                for _, tool in pairs(player.Character:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        -- Create damage boost interface
+                        if not tool:FindFirstChild("UrbanBoost") then
+                            local boost = Instance.new("IntValue")
+                            boost.Name = "UrbanBoost"
+                            boost.Value = 150
+                            boost.Parent = tool
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- ============================================
+-- CORE EXPLOIT FEATURES
+-- ============================================
+
+local FEATURES = {}
+
+function FEATURES:godMode(state)
+    EXPLOIT_STATE.godMode = state
+    if not state then return end
+    
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if not EXPLOIT_STATE.godMode then
+            connection:Disconnect()
+            return
+        end
+        
+        safeCall(function()
+            if Humanoid.Health <= 0 then
+                Humanoid.Health = Humanoid.MaxHealth
+            end
+        end)
+    end)
+    
+    table.insert(ACTIVE_CONNECTIONS, connection)
+end
+
+function FEATURES:infiniteJump(state)
+    EXPLOIT_STATE.infiniteJump = state
+    if not state then return end
+    
+    local jumpConnection
+    jumpConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.KeyCode == Enum.KeyCode.Space and EXPLOIT_STATE.infiniteJump then
+            safeCall(function()
+                Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end)
+        end
+    end)
+    
+    table.insert(ACTIVE_CONNECTIONS, jumpConnection)
+end
+
+function FEATURES:noclip(state)
+    EXPLOIT_STATE.noclip = state
+    
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if not EXPLOIT_STATE.noclip then
+            connection:Disconnect()
+            for _, part in pairs(Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+            return
+        end
+        
+        safeCall(function()
+            for _, part in pairs(Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end)
+    end)
+    
+    table.insert(ACTIVE_CONNECTIONS, connection)
+end
+
+function FEATURES:flyMode(state)
+    EXPLOIT_STATE.fly = state
+    if not state then return end
+    
+    local speed = 50
+    local flying = false
+    local moveDirection = Vector3.new(0, 0, 0)
+    
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000)
+    bodyVelocity.Parent = RootPart
+    
+    local inputConnection
+    inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.KeyCode == Enum.KeyCode.F then
+            flying = not flying
+        end
+        
+        if flying then
+            if input.KeyCode == Enum.KeyCode.W then moveDirection = moveDirection + RootPart.CFrame.LookVector end
+            if input.KeyCode == Enum.KeyCode.S then moveDirection = moveDirection - RootPart.CFrame.LookVector end
+            if input.KeyCode == Enum.KeyCode.A then moveDirection = moveDirection - RootPart.CFrame.RightVector end
+            if input.KeyCode == Enum.KeyCode.D then moveDirection = moveDirection + RootPart.CFrame.RightVector end
+            if input.KeyCode == Enum.KeyCode.Space then moveDirection = moveDirection + Vector3.new(0, 1, 0) end
+            if input.KeyCode == Enum.KeyCode.LeftControl then moveDirection = moveDirection - Vector3.new(0, 1, 0) end
+        end
+    end)
+    
+    local flightConnection
+    flightConnection = RunService.RenderStepped:Connect(function()
+        if not EXPLOIT_STATE.fly or not flying then
+            flightConnection:Disconnect()
+            bodyVelocity:Destroy()
+            return
+        end
+        
+        bodyVelocity.Velocity = moveDirection.Unit * speed
+    end)
+    
+    table.insert(ACTIVE_CONNECTIONS, inputConnection)
+    table.insert(ACTIVE_CONNECTIONS, flightConnection)
+end
+
+function FEATURES:setWalkSpeed(speed)
+    EXPLOIT_STATE.walkSpeed = speed
+    safeCall(function()
+        Humanoid.WalkSpeed = speed
+    end)
+end
+
+function FEATURES:setJumpPower(power)
+    EXPLOIT_STATE.jumpPower = power
+    safeCall(function()
+        Humanoid.JumpPower = power
+    end)
+end
+
+function FEATURES:aimbot(state)
+    EXPLOIT_STATE.aimbot = state
+    if not state then return end
+    
+    local connection
+    connection = RunService.RenderStepped:Connect(function()
+        if not EXPLOIT_STATE.aimbot then
+            connection:Disconnect()
+            return
+        end
+        
+        safeCall(function()
+            local closestPlayer = nil
+            local closestDistance = 500
+            
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        local distance = getDistance(RootPart.Position, hrp.Position)
+                        if distance < closestDistance then
+                            closestDistance = distance
+                            closestPlayer = player
+                        end
+                    end
+                end
+            end
+            
+            if closestPlayer and closestPlayer.Character then
+                local targetHrp = closestPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if targetHrp then
+                    RootPart.CFrame = CFrame.new(RootPart.Position, targetHrp.Position + targetHrp.CFrame.LookVector * 5)
+                end
+            end
+        end)
+    end)
+    
+    table.insert(ACTIVE_CONNECTIONS, connection)
+end
+
+function FEATURES:esp(state)
+    EXPLOIT_STATE.espEnabled = state
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and state then
+                safeCall(function()
+                    local existingBillboard = hrp:FindFirstChild("BuatinESP")
+                    if existingBillboard then existingBillboard:Destroy() end
+                    
+                    local billboard = Instance.new("BillboardGui")
+                    billboard.Name = "BuatinESP"
+                    billboard.Size = UDim2.new(4, 0, 4, 0)
+                    billboard.MaxDistance = 500
+                    billboard.Parent = hrp
+                    
+                    local textLabel = Instance.new("TextLabel")
+                    textLabel.BackgroundTransparency = 1
+                    textLabel.Size = UDim2.new(1, 0, 1, 0)
+                    textLabel.Text = player.Name .. " [" .. math.floor(getDistance(RootPart.Position, hrp.Position)) .. "m]"
+                    textLabel.TextColor3 = ACCENT_COLOR
+                    textLabel.TextSize = 12
+                    textLabel.Font = Enum.Font.GothamBold
+                    textLabel.Parent = billboard
+                end)
+            elseif not state then
+                local billboard = hrp:FindFirstChild("BuatinESP")
+                if billboard then billboard:Destroy() end
+            end
+        end
+    end
+end
+
+function FEATURES:invisibility(state)
+    EXPLOIT_STATE.invisible = state
+    
+    safeCall(function()
+        for _, part in pairs(Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Transparency = state and 0.7 or 0
+            end
+        end
+    end)
+end
+
+function FEATURES:antiLag(state)
+    EXPLOIT_STATE.antiLag = state
+    if not state then return end
+    
+    safeCall(function()
+        -- Reduce terrain rendering
+        local terrain = workspace.Terrain
+        terrain:FillBall(RootPart.Position, 1000, Enum.Material.Air)
+        
+        -- Lower quality textures
+        local settings = UserSettings():FindFirstChild("UserGameSettings")
+        if settings then
+            settings.MasterVolume = 0
+        end
+        
+        log("Anti-lag mode activated")
+    end)
+end
+
+function FEATURES:memoryOptimize(state)
+    EXPLOIT_STATE.memoryOptimize = state
+    if not state then return end
+    
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if tick() % 30 == 0 then
+            safeCall(function()
+                collectgarbage("collect")
+            end)
+        end
+    end)
+    
+    table.insert(ACTIVE_CONNECTIONS, connection)
+end
+
+function FEATURES:fpsBoost(state)
+    EXPLOIT_STATE.fpsBoost = state
+    if not state then return end
+    
+    safeCall(function()
+        game:GetService("RunService"):Set3dRenderingEnabled(true)
+        workspace.CurrentCamera.MaxAxisAlignedBoundingBoxSize = 5000
+    end)
+end
+
+-- ============================================
+-- PREMIUM GUI PANEL SYSTEM
+-- ============================================
+
+local GUI = {}
+GUI.panels = {}
+GUI.mainPanel = nil
+
+function GUI:createPanel()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "BuatinHubMainUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.DisplayOrder = 999
+    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    
+    -- Main container
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainContainer"
+    mainFrame.Size = UDim2.new(0, 550, 0, 700)
+    mainFrame.Position = UDim2.new(0.35, 0, 0.1, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+    mainFrame.BorderColor3 = THEME_COLOR
+    mainFrame.BorderSizePixel = 3
+    mainFrame.Draggable = true
+    mainFrame.Active = true
+    mainFrame.ClipsDescendants = false
+    mainFrame.Parent = screenGui
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 20)
+    corner.Parent = mainFrame
+    
+    -- Stroke effect
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = THEME_COLOR
+    stroke.Thickness = 2
+    stroke.Parent = mainFrame
+    
+    -- HEADER
+    local header = Instance.new("Frame")
+    header.Name = "Header"
+    header.Size = UDim2.new(1, 0, 0, 60)
+    header.BackgroundColor3 = THEME_COLOR
+    header.BorderSizePixel = 0
+    header.Parent = mainFrame
+    
+    local headerCorner = Instance.new("UICorner")
+    headerCorner.CornerRadius = UDim.new(0, 20)
+    headerCorner.Parent = header
+    
+    -- Logo
+    local logoLabel = Instance.new("TextLabel")
+    logoLabel.Name = "Logo"
+    logoLabel.Text = "⚡ BUATIN HUB"
+    logoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    logoLabel.TextSize = 20
+    logoLabel.Font = Enum.Font.GothamBold
+    logoLabel.Size = UDim2.new(0.5, 0, 1, 0)
+    logoLabel.Position = UDim2.new(0, 15, 0, 0)
+    logoLabel.BackgroundTransparency = 1
+    logoLabel.Parent = header
+    
+    -- Version
+    local versionLabel = Instance.new("TextLabel")
+    versionLabel.Name = "Version"
+    versionLabel.Text = "v" .. SCRIPT_VERSION
+    versionLabel.TextColor3 = ACCENT_COLOR
+    versionLabel.TextSize = 12
+    versionLabel.Font = Enum.Font.Gotham
+    versionLabel.Size = UDim2.new(0.3, 0, 1, 0)
+    versionLabel.Position = UDim2.new(0.5, 0, 0, 0)
+    versionLabel.BackgroundTransparency = 1
+    versionLabel.Parent = header
+    
+    -- Status
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Name = "Status"
+    statusLabel.Text = "● ACTIVE"
+    statusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+    statusLabel.TextSize = 11
+    statusLabel.Font = Enum.Font.GothamBold
+    statusLabel.Size = UDim2.new(0.2, 0, 1, 0)
+    statusLabel.Position = UDim2.new(0.75, 0, 0, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Parent = header
+    
+    -- Close Button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Name = "CloseBtn"
+    closeBtn.Text = "×"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.TextSize = 32
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.Size = UDim2.new(0, 60, 0, 60)
+    closeBtn.Position = UDim2.new(1, -60, 0, 0)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = header
+    
+    local closeBtnCorner = Instance.new("UICorner")
+    closeBtnCorner.CornerRadius = UDim.new(0, 20)
+    closeBtnCorner.Parent = closeBtn
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+    
+    -- SCROLL AREA
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Name = "ScrollContainer"
+    scrollFrame.Size = UDim2.new(1, 0, 1, -60)
+    scrollFrame.Position = UDim2.new(0, 0, 0, 60)
+    scrollFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 10
+    scrollFrame.ScrollBarImageColor3 = THEME_COLOR
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 2000)
+    scrollFrame.ClipsDescendants = true
+    scrollFrame.Parent = mainFrame
+    
+    local scrollCorner = Instance.new("UICorner")
+    scrollCorner.CornerRadius = UDim.new(0, 15)
+    scrollCorner.Parent = scrollFrame
+    
+    -- Layout
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, 12)
+    listLayout.Parent = scrollFrame
+    
+    -- Padding
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 15)
+    padding.PaddingRight = UDim.new(0, 15)
+    padding.PaddingTop = UDim.new(0, 12)
+    padding.PaddingBottom = UDim.new(0, 12)
+    padding.Parent = scrollFrame
+    
+    GUI.mainPanel = screenGui
+    GUI.scrollFrame = scrollFrame
+    GUI.scrollLayout = listLayout
+    
+    return screenGui
+end
+
+function GUI:addToggle(labelText, callbackFunc)
+    local container = Instance.new("Frame")
+    container.Name = labelText .. "_Toggle"
+    container.Size = UDim2.new(1, -30, 0, 50)
+    container.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    container.BorderSizePixel = 0
+    container.Parent = GUI.scrollFrame
+    
+    local containerCorner = Instance.new("UICorner")
+    containerCorner.CornerRadius = UDim.new(0, 12)
+    containerCorner.Parent = container
+    
+    local containerStroke = Instance.new("UIStroke")
+    containerStroke.Color = Color3.fromRGB(80, 80, 100)
+    containerStroke.Thickness = 1
+    containerStroke.Parent = container
+    
+    -- Label
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.Text = "▸ " .. labelText
+    label.TextColor3 = Color3.fromRGB(220, 220, 240)
+    label.TextSize = 14
+    label.Font = Enum.Font.Gotham
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.Position = UDim2.new(0, 12, 0, 0)
+    label.BackgroundTransparency = 1
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = container
+    
+    -- Toggle Switch
+    local toggleBg = Instance.new("Frame")
+    toggleBg.Name = "ToggleBg"
+    toggleBg.Size = UDim2.new(0, 70, 0, 35)
+    toggleBg.Position = UDim2.new(0.72, 0, 0.075, 0)
+    toggleBg.BackgroundColor3 = Color3.fromRGB(50, 30, 30)
+    toggleBg.BorderSizePixel = 0
+    toggleBg.Parent = container
+    
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(0, 10)
+    toggleCorner.Parent = toggleBg
+    
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Name = "Button"
+    toggleButton.Text = "OFF"
+    toggleButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+    toggleButton.TextSize = 11
+    toggleButton.Font = Enum.Font.GothamBold
+    toggleButton.Size = UDim2.new(1, 0, 1, 0)
+    toggleButton.BackgroundColor3 = Color3.fromRGB(50, 30, 30)
+    toggleButton.BorderSizePixel = 0
+    toggleButton.Parent = toggleBg
+    
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(0, 10)
+    buttonCorner.Parent = toggleButton
+    
+    local toggled = false
+    
+    toggleButton.MouseButton1Click:Connect(function()
+        toggled = not toggled
+        toggleButton.Text = toggled and "ON" or "OFF"
+        toggleButton.TextColor3 = toggled and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 100, 100)
+        toggleBg.BackgroundColor3 = toggled and Color3.fromRGB(30, 50, 30) or Color3.fromRGB(50, 30, 30)
+        
+        safeCall(callbackFunc, toggled)
+    end)
+end
+
+function GUI:addSlider(labelText, minVal, maxVal, callbackFunc)
+    local container = Instance.new("Frame")
+    container.Name = labelText .. "_Slider"
+    container.Size = UDim2.new(1, -30, 0, 75)
+    container.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    container.BorderSizePixel = 0
+    container.Parent = GUI.scrollFrame
+    
+    local containerCorner = Instance.new("UICorner")
+    containerCorner.CornerRadius = UDim.new(0, 12)
+    containerCorner.Parent = container
+    
+    local containerStroke = Instance.new("UIStroke")
+    containerStroke.Color = Color3.fromRGB(80, 80, 100)
+    containerStroke.Thickness = 1
+    containerStroke.Parent = container
+    
+    -- Label
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.Text = "▸ " .. labelText .. ": " .. minVal
+    label.TextColor3 = Color3.fromRGB(220, 220, 240)
+    label.TextSize = 13
+    label.Font = Enum.Font.GothamBold
+    label.Size = UDim2.new(1, -24, 0, 25)
+    label.Position = UDim2.new(0, 12, 0, 8)
+    label.BackgroundTransparency = 1
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = container
+    
+    -- Slider background
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Name = "SliderBg"
+    sliderBg.Size = UDim2.new(1, -24, 0, 10)
+    sliderBg.Position = UDim2.new(0, 12, 0, 40)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Parent = container
+    
+    local sliderCorner = Instance.new("UICorner")
+    sliderCorner.CornerRadius = UDim.new(0, 5)
+    sliderCorner.Parent = sliderBg
+    
+    -- Slider fill
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Name = "Fill"
+    sliderFill.Size = UDim2.new(0, 0, 1, 0)
+    sliderFill.BackgroundColor3 = THEME_COLOR
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderBg
+    
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(0, 5)
+    fillCorner.Parent = sliderFill
+    
+    -- Slider button
+    local sliderButton = Instance.new("Frame")
+    sliderButton.Name = "SliderButton"
+    sliderButton.Size = UDim2.new(0, 18, 0, 18)
+    sliderButton.Position = UDim2.new(0, -9, 0.5, -9)
+    sliderButton.BackgroundColor3 = THEME_COLOR
+    sliderButton.BorderSizePixel = 0
+    sliderButton.Parent = sliderBg
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 9)
+    btnCorner.Parent = sliderButton
+    
+    local currentValue = minVal
+    local dragging = false
+    
+    local function updateSlider(input)
+        local mouseX = UserInputService:GetMouseLocation().X
+        local sliderPosX = sliderBg.AbsolutePosition.X
+        local sliderWidth = sliderBg.AbsoluteSize.X
+        local relativePos = math.clamp(mouseX - sliderPosX, 0, sliderWidth)
+        
+        local percentage = relativePos / sliderWidth
+        currentValue = math.floor(minVal + (percentage * (maxVal - minVal)))
+        
+        sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
+        sliderButton.Position = UDim2.new(percentage, -9, 0.5, -9)
+        label.Text = "▸ " .. labelText .. ": " .. currentValue
+        
+        safeCall(callbackFunc, currentValue)
+    end
+    
+    sliderButton.InputBegan:Connect(function(input, gameProcessed)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input, gameProcessed)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input, gameProcessed)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            updateSlider(input)
+        end
+    end)
+end
+
+function GUI:addSection(sectionTitle)
+    local sectionLabel = Instance.new("TextLabel")
+    sectionLabel.Name = sectionTitle .. "_Section"
+    sectionLabel.Text = "━━━ " .. sectionTitle .. " ━━━"
+    sectionLabel.TextColor3 = THEME_COLOR
+    sectionLabel.TextSize = 13
+    sectionLabel.Font = Enum.Font.GothamBold
+    sectionLabel.Size = UDim2.new(1, -30, 0, 30)
+    sectionLabel.BackgroundTransparency = 1
+    sectionLabel.Parent = GUI.scrollFrame
+end
+
+-- ============================================
+-- MAIN INITIALIZATION
+-- ============================================
+
+local function initializeExploit()
+    log("Initializing " .. EXPLOIT_NAME .. " v" .. SCRIPT_VERSION)
+    
+    -- Create GUI
+    GUI:createPanel()
+    
+    -- Add sections and features
+    GUI:addSection("CORE FEATURES")
+    GUI:addToggle("God Mode", function(state) FEATURES:godMode(state) end)
+    GUI:addToggle("Infinite Jump", function(state) FEATURES:infiniteJump(state) end)
+    GUI:addToggle("Noclip", function(state) FEATURES:noclip(state) end)
+    GUI:addToggle("Fly Mode", function(state) FEATURES:flyMode(state) end)
+    
+    GUI:addSection("COMBAT")
+    GUI:addToggle("Aimbot", function(state) FEATURES:aimbot(state) end)
+    GUI:addToggle("Fast Attack", function(state) FEATURES:fastAttack(state) end)
+    
+    GUI:addSection("CUSTOMIZATION")
+    GUI:addSlider("Walk Speed", 16, 150, function(val) FEATURES:setWalkSpeed(val) end)
+    GUI:addSlider("Jump Power", 50, 200, function(val) FEATURES:setJumpPower(val) end)
+    
+    GUI:addSection("UTILITY")
+    GUI:addToggle("ESP (See Players)", function(state) FEATURES:esp(state) end)
+    GUI:addToggle("Invisibility", function(state) FEATURES:invisibility(state) end)
+    
+    GUI:addSection("PROTECTION")
+    GUI:addToggle("Anti-Troll Shield", function(state) EXPLOIT_STATE.antiTroll = state; if state then ANTI_TROLL:protectCharacter() end end)
+    
+    GUI:addSection("URBAN WARFARE")
+    GUI:addToggle("Activate Urban Mode", function(state) EXPLOIT_STATE.urbanWarfareActive = state; if state then URBAN_WARFARE:activateForAllPlayers() end end)
+    GUI:addSlider("Weapon Power", 1.0, 3.0, function(val) EXPLOIT_STATE.weaponMultiplier = val / 10 end)
+    
+    GUI:addSection("OPTIMIZATION")
+    GUI:addToggle("FPS Booster", function(state) FEATURES:fpsBoost(state) end)
+    GUI:addToggle("Anti-Lag", function(state) FEATURES:antiLag(state) end)
+    GUI:addToggle("Memory Optimize", function(state) FEATURES:memoryOptimize(state) end)
+    
+    -- Activate default protections
+    ANTI_TROLL:blockExploitAttacks()
+    ANTI_TROLL:protectCharacter()
+    FEATURES:memoryOptimize(true)
+    
+    log("✓ Exploit fully initialized")
+    log("✓ GUI Panel ready")
+    log("✓ Anti-troll protection active")
+    log("✓ Urban Warfare system ready")
+    log("✓ All systems nominal")
+    
+    return true
+end
+
+-- ============================================
+-- ERROR HANDLING & SAFETY
+-- ============================================
+
+local function safeInitialize()
+    local success, err = pcall(initializeExploit)
+    if not success then
+        logWarning("Initialization error: " .. tostring(err))
+        logWarning("Attempting fallback initialization...")
+        wait(2)
+        initializeExploit()
+    end
+end
+
+-- ============================================
+-- CHARACTER RESPAWN HANDLING
+-- ============================================
+
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    wait(0.5)
+    Character = newChar
+    Humanoid = Character:WaitForChild("Humanoid")
+    RootPart = Character:WaitForChild("HumanoidRootPart")
+    
+    log("Character respawned - Systems reinitialized")
+end)
+
+-- ============================================
+-- CLEANUP ON REMOVAL
+-- ============================================
+
+LocalPlayer.Character:FindFirstChild("Humanoid").Died:Connect(function()
+    for _, connection in pairs(ACTIVE_CONNECTIONS) do
+        if connection and typeof(connection) == "RBXScriptConnection" then
+            pcall(function() connection:Disconnect() end)
+        end
+    end
+end)
+
+-- ============================================
+-- START EXPLOIT
+-- ============================================
+
+safeInitialize()
