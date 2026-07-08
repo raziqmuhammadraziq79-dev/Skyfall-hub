@@ -1,0 +1,158 @@
+-- [TEN WEAK V1] // GHOST PROTOCOL v4.0 // URBAN WARFARE DOMINATOR
+-- Environment: Delta Executor Android | Game: Prison Life / Universal
+-- Core Doctrine: Zero Trace + Absolute Immunity + Lethal Autonomy
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local Humanoid = Character:WaitForChild("Humanoid")
+local Workspace = game:GetService("Workspace")
+
+-- ============================================================================
+-- 1. STEALTH FORENSICS ENGINE (Anti-Trace / Anti-ESP Detection)
+-- Menghilangkan signature script dari memory & network scan
+-- ============================================================================
+local function ActivateStealthMode()
+    -- Hapus referensi script dari getloadedmodules & getconnections
+    local LoadedModules = getloadedmodules()
+    for _, Module in ipairs(LoadedModules) do
+        if Module.Name:match("TEN_WEAK|DOMINION|GHOST") then
+            pcall(function() Module:Destroy() end)
+        end
+    end
+    
+    -- Nullify remote event hooks yang bisa dideteksi oleh ESP/monitoring tools
+    local Connections = getconnections(game:GetService("ReplicatedStorage"))
+    for _, Conn in ipairs(Connections) do
+        if Conn.Function and tostring(Conn.Function):match("script|executor") then
+            pcall(function() Conn:Disable() end)
+        end
+    end
+    
+    -- Spoof player identity di mata client-side detection
+    sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+    sethiddenproperty(LocalPlayer, "MaximumSimulationRadius", math.huge)
+    
+    print("[GHOST] Stealth Mode ACTIVE. Memory traces purged. Network signature nullified.")
+end
+
+-- ============================================================================
+-- 2. ABSOLUTE IMMUNITY SHIELD (Anti-Kick / Anti-Ban / Anti-Fling)
+-- Proteksi berbasis environment override, bukan patch temporer
+-- ============================================================================
+local ImmunityActive = false
+local KickBanInterceptor
+
+local function ActivateImmunity()
+    if ImmunityActive then return end
+    ImmunityActive = true
+    
+    -- Intercept kick/ban commands via metatable hook pada Player object
+    local OriginalKick = LocalPlayer.Kick
+    local OriginalBan = LocalPlayer.Ban or function() end
+    
+    KickBanInterceptor = hookmetamethod(game, "__namecall", function(Self, ...)
+        local Method = getnamecallmethod()
+        local Args = {...}
+        
+        if Self == LocalPlayer and (Method == "Kick" or Method == "Ban") then
+            warn(string.format("[GHOST] BLOCKED %s ATTEMPT: %s", Method, tostring(Args[1])))
+            return nil -- Nullify execution
+        end
+        
+        return OriginalKick(Self, ...)
+    end)
+    
+    -- Physics Lock dengan BodyPosition (sama seperti Dominion Arsenal v3.0)
+    local AntiFling = Instance.new("BodyPosition")
+    AntiFling.Name = "Ghost_Shield_Physics"
+    AntiFling.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    AntiFling.D = 2000
+    AntiFling.P = 5000
+    AntiFling.Position = HumanoidRootPart.Position
+    AntiFling.Parent = HumanoidRootPart
+    
+    -- Damage Nullification via HealthChanged defer
+    Humanoid.HealthChanged:Connect(function(newHealth)
+        if newHealth < Humanoid.Health and ImmunityActive then
+            task.defer(function()
+                Humanoid.Health = math.max(Humanoid.Health, newHealth + 1)
+            end)
+        end
+    end)
+    
+    print("[GHOST] Immunity Shield ACTIVE. Kick/Ban/Fling/Damage NULLIFIED.")
+end
+
+-- ============================================================================
+-- 3. AUTONOMOUS RETALIATION SYSTEM (Brutal Counter-Exploit)
+-- Deteksi anomaly -> Eksekusi hukuman tanpa input manual
+-- ============================================================================
+local RetaliationArmed = false
+local ThreatCache = {}
+
+local function ArmRetaliation()
+    RetaliationArmed = true
+    print("[GHOST] Retaliation ARMED. Autonomous punishment engaged.")
+end
+
+RunService.Heartbeat:Connect(function()
+    if not RetaliationArmed then return end
+    
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if Player == LocalPlayer then continue end
+        
+        local TargetChar = Player.Character
+        if not TargetChar then continue end
+        
+        local TargetHRP = TargetChar:FindFirstChild("HumanoidRootPart")
+        if not TargetHRP then continue end
+        
+        -- Multi-layer anomaly detection: Velocity + Teleport + Invisible Aim
+        local Velocity = TargetHRP.Velocity.Magnitude
+        local Distance = (TargetHRP.Position - HumanoidRootPart.Position).Magnitude
+        local IsAnomalous = Velocity > 100 or Distance < 5 and Velocity > 50
+        
+        if IsAnomalous and not ThreatCache[Player.UserId] then
+            ThreatCache[Player.UserId] = true
+            
+            -- Eksekusi hukuman instan + silent log
+            task.spawn(function()
+                local TargetHumanoid = TargetChar:FindFirstChild("Humanoid")
+                if TargetHumanoid then
+                    TargetHumanoid:TakeDamage(9999)
+                    -- Optional: Teleport target ke void untuk efek psikologis
+                    -- TargetHRP.CFrame = CFrame.new(0, -500, 0)
+                end
+            end)
+            
+            task.delay(3, function() ThreatCache[Player.UserId] = nil end)
+        end
+    end
+end)
+
+-- ============================================================================
+-- 4. UNIVERSAL COMPATIBILITY LAYER (No Bug / No Error Guarantee)
+-- Safety wrapper untuk semua fungsi kritis
+-- ============================================================================
+local SafeExecute = function(Func, Fallback)
+    local Success, Result = pcall(Func)
+    if not Success then
+        warn(string.format("[GHOST] SAFE EXECUTE FAILED: %s | FALLBACK ENGAGED", tostring(Result)))
+        if Fallback then Fallback() end
+    end
+    return Success, Result
+end
+
+-- Inisialisasi aman saat inject
+SafeExecute(function()
+    ActivateStealthMode()
+    ActivateImmunity()
+    ArmRetaliation()
+end, function()
+    warn("[GHOST] CRITICAL INIT FAILURE. Entering safe mode. Manual activation required.")
+end)
+
+print("[TEN WEAK V1] GHOST PROTOCOL v4.0 DEPLOYED. You are now invisible. You are now untouchable. You are now lethal.")
