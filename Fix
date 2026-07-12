@@ -1,0 +1,321 @@
+-- SKYFALL HUB v6.0 // SUPER MAX BRUTAL KERNEL
+-- ABSOLUTE PHYSICS LOCK + DEVIL ESP + ILLUSION KICK PROTOCOL
+-- DESIGNED TO BE UNFLINGABLE, INVISIBLE, AND TERRIFYING
+
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+-- [SUPER MAX CONFIGURATION]
+local MAX_HEALTH = 9e9
+local AMMO_REFILL_INTERVAL = 0.05 -- Faster refill
+local PHYSICS_LOCK_STRENGTH = 1e9 -- Absolute anchor force
+local DEVIL_ESP_COLOR = Color3.fromRGB(180, 0, 0) -- Blood red
+local DEVIL_ESP_GLOW = Color3.fromRGB(255, 50, 50) -- Pulsing glow
+local DETECTION_RANGE = 100 -- studs
+local ILLUSION_KICK_DURATION = 5 -- seconds
+
+-- [SHARED STATE]
+local Character, Humanoid, RootPart
+local DetectedExploiters = {}
+local DevilEspGui = nil
+local IsLocked = false
+local LastPosition = Vector3.zero
+
+-- [CORE MODULES]
+
+-- 1. TRIPLE-LAYER PHYSICS ANTI-FLING LOCK
+local function InitPhysicsLock()
+    if not RootPart or not Humanoid then return end
+    
+    -- Layer 1: Anchor State
+    RootPart.Anchored = true
+    
+    -- Layer 2: WeldConstraint to Baseplate (Prevents server override)
+    local Baseplate = Workspace:FindFirstChild("Baseplate") or Workspace.Terrain
+    local Weld = Instance.new("WeldConstraint")
+    Weld.Part0 = RootPart
+    Weld.Part1 = Baseplate
+    Weld.Parent = RootPart
+    
+    -- Layer 3: CFrame Override Loop (Renders any external force useless)
+    RunService.RenderStepped:Connect(function(dt)
+        if not RootPart or not RootPart.Parent then return end
+        
+        -- Force position lock
+        RootPart.CFrame = CFrame.new(LastPosition) * CFrame.Angles(0, RootPart.Orientation.Y, 0)
+        
+        -- Re-anchor in case script removed it
+        RootPart.Anchored = true
+        
+        -- Update last known safe position
+        LastPosition = RootPart.Position
+    end)
+    
+    -- Prevent unanchoring via property change
+    RootPart:GetPropertyChangedSignal("Anchored"):Connect(function()
+        if not RootPart.Anchored then
+            RootPart.Anchored = true
+        end
+    end)
+end
+
+-- 2. DEVIL ESP OVERLAY (VISUAL TERROR SYSTEM)
+local function InitDevilESP()
+    -- Create persistent GUI
+    DevilEspGui = Instance.new("ScreenGui")
+    DevilEspGui.Name = "DevilVisionOverlay"
+    DevilEspGui.ResetOnSpawn = false
+    DevilEspGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    DevilEspGui.IgnoreGuiInset = true
+    DevilEspGui.Parent = game:GetService("CoreGui")
+    
+    local Camera = Workspace.CurrentCamera
+    
+    local function UpdateDevilVision()
+        -- Clear previous frames
+        for _, Child in ipairs(DevilEspGui:GetChildren()) do
+            if Child:IsA("Frame") or Child:IsA("TextLabel") then Child:Destroy() end
+        end
+        
+        for _, Player in ipairs(Players:GetPlayers()) do
+            if Player ~= LocalPlayer and Player.Character then
+                local HR = Player.Character:FindFirstChild("HumanoidRootPart")
+                local Hum = Player.Character:FindFirstChildOfClass("Humanoid")
+                
+                -- THREAT ASSESSMENT
+                local IsThreat = false
+                local ThreatType = "Unknown"
+                
+                -- Check for weapons/hostile tools
+                for _, Tool in ipairs(Player.Character:GetChildren()) do
+                    if Tool:IsA("Tool") and Tool.Name:lower():match("gun|knife|bat|fling|kill") then
+                        IsThreat = true
+                        ThreatType = "ARMED"
+                    end
+                end
+                
+                -- Check for anomalous movement (exploiter signature)
+                if HR and math.abs(HR.Velocity.Y) > 15 then
+                    IsThreat = true
+                    ThreatType = "FLYING/FLINGING"
+                end
+                
+                if IsThreat and HR then
+                    local ScreenPos, OnScreen = Camera:WorldToViewportPoint(HR.Position + Vector3.new(0, 4, 0))
+                    
+                    if OnScreen then
+                        -- Devil Silhouette Frame
+                        local DevilFrame = Instance.new("Frame")
+                        DevilFrame.Size = UDim2.new(0, 60, 0, 80)
+                        DevilFrame.BackgroundColor3 = DEVIL_ESP_COLOR
+                        DevilFrame.BackgroundTransparency = 0.2
+                        DevilFrame.BorderSizePixel = 3
+                        DevilFrame.BorderColor3 = DEVIL_ESP_GLOW
+                        DevilFrame.Parent = DevilEspGui
+                        
+                        -- Position with pulsing effect
+                        local Pulse = math.sin(tick() * 5) * 2
+                        DevilFrame.Position = UDim2.new(0, ScreenPos.X - 30 + Pulse, 0, ScreenPos.Y - 40)
+                        
+                        -- Threat Label
+                        local Label = Instance.new("TextLabel")
+                        Label.Size = UDim2.new(0, 100, 0, 20)
+                        Label.Position = UDim2.new(0, ScreenPos.X - 50, 0, ScreenPos.Y + 45)
+                        Label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                        Label.BackgroundTransparency = 0.5
+                        Label.Text = "[DEVIL] " .. Player.Name .. " - " .. ThreatType
+                        Label.TextColor3 = Color3.fromRGB(255, 0, 0)
+                        Label.TextScaled = true
+                        Label.Font = Enum.Font.GothamBlack
+                        Label.Parent = DevilEspGui
+                        
+                        -- Tracking Line to Center Screen
+                        local Line = Instance.new("Frame")
+                        local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+                        local Target = Vector2.new(ScreenPos.X, ScreenPos.Y)
+                        local Distance = (Target - Center).Magnitude
+                        local Angle = math.atan2(Target.Y - Center.Y, Target.X - Center.X)
+                        
+                        Line.Size = UDim2.new(0, 3, 0, Distance)
+                        Line.BackgroundColor3 = DEVIL_ESP_GLOW
+                        Line.Rotation = math.deg(Angle)
+                        Line.AnchorPoint = Vector2.new(0.5, 0)
+                        Line.Position = UDim2.new(0, Center.X, 0, Center.Y)
+                        Line.Parent = DevilEspGui
+                    end
+                end
+            end
+        end
+    end
+    
+    RunService.RenderStepped:Connect(UpdateDevilVision)
+end
+
+-- 3. ILLUSION KICK PROTOCOL (PSYCHOLOGICAL WARFARE)
+local function TriggerIllusionKick(TargetPlayer)
+    if not TargetPlayer or not TargetPlayer.Character then return end
+    
+    task.spawn(function()
+        -- Inject fake kick message into their chat
+        pcall(function()
+            local ChatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            if ChatRemote then
+                ChatRemote:FireServer("SayMessageRequest", {
+                    Message = "⚠️ SYSTEM NOTICE ⚠️\nYou have been kicked from the server.\nReason: Exploiting detected by SKYFALL HUB v6.0\nDuration: Permanent\nAppeal: None",
+                    Channel = "All"
+                })
+            end
+        end)
+        
+        -- Flood their screen with error-like particles
+        local TargetHR = TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if TargetHR then
+            for i = 1, 100 do
+                local ErrorPart = Instance.new("Part")
+                ErrorPart.Size = Vector3.new(0.1, 0.1, 0.1)
+                ErrorPart.Transparency = 0.8
+                ErrorPart.Color = Color3.fromRGB(255, 0, 0)
+                ErrorPart.Material = Enum.Material.Neon
+                ErrorPart.CanCollide = false
+                ErrorPart.Anchored = true
+                ErrorPart.Position = TargetHR.Position + Vector3.new(math.random(-5, 5), math.random(-5, 5), math.random(-5, 5))
+                ErrorPart.Parent = Workspace
+                
+                task.delay(2, function() 
+                    if ErrorPart and ErrorPart.Parent then ErrorPart:Destroy() end 
+                end)
+            end
+        end
+        
+        warn("[DEVIL KICK] Illusion deployed on: " .. TargetPlayer.Name)
+    end)
+end
+
+-- 4. INFINITE HEALTH & AMMO (OPTIMIZED)
+local function InitSurvivalSystems()
+    -- Health
+    if Humanoid then
+        Humanoid.MaxHealth = MAX_HEALTH
+        Humanoid.Health = MAX_HEALTH
+        Humanoid.HealthChanged:Connect(function(NewHealth)
+            if NewHealth < MAX_HEALTH then Humanoid.Health = MAX_HEALTH end
+        end)
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    end
+    
+    -- Ammo
+    task.spawn(function()
+        while true do
+            task.wait(AMMO_REFILL_INTERVAL)
+            if LocalPlayer.Character then
+                for _, Container in ipairs({LocalPlayer.Backpack, LocalPlayer.Character}) do
+                    for _, Tool in ipairs(Container:GetChildren()) do
+                        if Tool:IsA("Tool") then
+                            for _, Child in ipairs(Tool:GetDescendants()) do
+                                if Child:IsA("IntValue") and Child.Name:lower():match("ammo|mag|clip") then
+                                    Child.Value = 9999
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- 5. AUTO-DETECT EXPLOITER + ANTI-FLING TRIGGER
+local function InitDetectionSystem()
+    task.spawn(function()
+        while true do
+            task.wait(1)
+            for _, Player in ipairs(Players:GetPlayers()) do
+                if Player ~= LocalPlayer and Player.Character then
+                    local HR = Player.Character:FindFirstChild("HumanoidRootPart")
+                    if HR then
+                        local VelocityMag = HR.Velocity.Magnitude
+                        local YVelocity = math.abs(HR.Velocity.Y)
+                        
+                        -- FLING DETECTION SIGNATURE
+                        if YVelocity > 50 or VelocityMag > 100 then
+                            if not table.find(DetectedExploiters, Player) then
+                                table.insert(DetectedExploiters, Player)
+                                warn("[ANTI-FLING] Exploiter detected: " .. Player.Name .. " | Velocity: " .. tostring(VelocityMag))
+                                
+                                -- Trigger Illusion Kick immediately
+                                TriggerIllusionKick(Player)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- [INITIALIZATION & STEALTH REINFORCEMENT]
+local function Initialize()
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    Character:WaitForChild("HumanoidRootPart")
+    Humanoid = Character:WaitForChild("Humanoid")
+    RootPart = Character:FindFirstChild("HumanoidRootPart")
+    LastPosition = RootPart.Position
+    
+    -- Absolute Stealth Masking (Re-applied every frame via separate loop)
+    task.spawn(function()
+        while true do
+            task.wait()
+            if Character and Character.Parent then
+                for _, Desc in ipairs(Character:GetDescendants()) do
+                    if Desc:IsA("BasePart") then
+                        Desc.LocalTransparencyModifier = 1
+                        Desc.Material = Enum.Material.SmoothPlastic
+                        Desc.Color = Color3.fromRGB(0, 0, 0)
+                    end
+                end
+                -- NameTag Removal
+                local Head = Character:FindFirstChild("Head")
+                if Head then
+                    for _, Tag in ipairs(Head:GetChildren()) do
+                        if Tag:IsA("BillboardGui") then Tag:Destroy() end
+                    end
+                end
+            end
+        end
+    end)
+    
+    -- Activate All Systems
+    InitPhysicsLock()
+    InitDevilESP()
+    InitSurvivalSystems()
+    InitDetectionSystem()
+    
+    warn("[SKYFALL HUB v6.0] SUPER MAX BRUTAL KERNEL ONLINE. PHYSICS LOCKED. DEVIL VISION ACTIVE.")
+end
+
+-- [RESPAWN HANDLER WITH INSTANT LOCK]
+LocalPlayer.CharacterAdded:Connect(function(NewChar)
+    task.wait(0.05) -- Minimal delay
+    Character = NewChar
+    Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    RootPart = Character:FindFirstChild("HumanoidRootPart")
+    
+    if RootPart then
+        LastPosition = RootPart.Position
+        RootPart.Anchored = true
+    end
+    
+    if Humanoid then
+        Humanoid.MaxHealth = MAX_HEALTH
+        Humanoid.Health = MAX_HEALTH
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    end
+end)
+
+-- [EXECUTE]
+task.spawn(Initialize)
