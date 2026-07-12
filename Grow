@@ -1,0 +1,351 @@
+-- SKYFALL HUB v5.0 // DEVIL'S WRATH KERNEL
+-- OMNIPOTENT WARFARE OS | INFINITE POWER | REALITY DISTORTION
+-- DESIGNED FOR ABSOLUTE DOMINANCE IN PRISON LIFE
+
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+-- [DEVIL CONFIGURATION]
+local MAX_HEALTH = 9e9 -- effectively infinite
+local AMMO_CLONE_RATE = 0.1 -- seconds between ammo checks
+local ESP_THREAT_COLOR = Color3.fromRGB(255, 0, 0) -- Red for criminals
+local ESP_TRACK_COLOR = Color3.fromRGB(0, 255, 255) -- Cyan for tracking lines
+local DETECTION_SENSITIVITY = 0.8 -- 0-1, higher = more sensitive to anomalies
+local GHOST_CLONE_COUNT = 3 -- Number of fake clones during punishment
+
+-- [SHARED STATE]
+local Character, Humanoid, RootPart
+local DetectedExploiters = {}
+local ThreatTargets = {}
+local GhostClones = {}
+local IsPunishing = false
+
+-- [CORE MODULES]
+
+-- 1. INFINITE HEALTH & DAMAGE NEGATION
+local function InitHealthSystem()
+    if not Humanoid then return end
+    
+    Humanoid.MaxHealth = MAX_HEALTH
+    Humanoid.Health = MAX_HEALTH
+    
+    -- Instant damage negation via event
+    Humanoid.HealthChanged:Connect(function(NewHealth)
+        if NewHealth < MAX_HEALTH then
+            Humanoid.Health = MAX_HEALTH
+        end
+    end)
+    
+    -- State Lock (Anti-Ragdoll/Death)
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    Humanoid.BreakJointsOnDeath = false
+end
+
+-- 2. INFINITE AMMO SPOOFER
+local function InitAmmoSystem()
+    local function RefillAmmo(Tool)
+        if Tool and Tool:FindFirstChild("Ammo") then
+            local AmmoVal = Tool:FindFirstChild("Ammo")
+            if AmmoVal:IsA("IntValue") or AmmoVal:IsA("NumberValue") then
+                AmmoVal.Value = 999
+            end
+        end
+        -- Also check for Magazine/Clip values common in PL guns
+        for _, Child in ipairs(Tool:GetChildren()) do
+            if Child.Name:lower():match("mag") or Child.Name:lower():match("clip") then
+                if Child:IsA("IntValue") then Child.Value = 999 end
+            end
+        end
+    end
+    
+    -- Monitor backpack and character tools
+    local function ScanTools(Container)
+        for _, Tool in ipairs(Container:GetChildren()) do
+            if Tool:IsA("Tool") then
+                RefillAmmo(Tool)
+            end
+        end
+    end
+    
+    -- Continuous refill loop
+    task.spawn(function()
+        while true do
+            task.wait(AMMO_CLONE_RATE)
+            if LocalPlayer.Character then
+                ScanTools(LocalPlayer.Backpack)
+                ScanTools(LocalPlayer.Character)
+            end
+        end
+    end)
+    
+    -- Immediate refill on equip
+    LocalPlayer.CharacterAdded:Connect(function(Char)
+        Char.ChildAdded:Connect(function(Child)
+            if Child:IsA("Tool") then RefillAmmo(Child) end
+        end)
+    end)
+end
+
+-- 3. AUTO-TRACK ESP CRIMINAL (THREAT VISUALIZATION)
+local function InitThreatESP()
+    local Camera = Workspace.CurrentCamera
+    
+    -- Create persistent UI layer for ESP
+    local EspGui = Instance.new("ScreenGui")
+    EspGui.Name = "DevilThreatESP"
+    EspGui.ResetOnSpawn = false
+    EspGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    EspGui.Parent = game:GetService("CoreGui")
+    
+    -- Function to update threat visualization
+    local function UpdateThreatDisplay()
+        -- Clear old frames
+        for _, Frame in ipairs(EspGui:GetChildren()) do
+            if Frame:IsA("Frame") then Frame:Destroy() end
+        end
+        
+        for _, Player in ipairs(Players:GetPlayers()) do
+            if Player ~= LocalPlayer and Player.Character then
+                local HR = Player.Character:FindFirstChild("HumanoidRootPart")
+                local Hum = Player.Character:FindFirstChildOfClass("Humanoid")
+                
+                -- THREAT DETECTION LOGIC
+                local IsCriminal = false
+                local ThreatLevel = 0
+                
+                -- Check for weapons/tools
+                for _, Tool in ipairs(Player.Character:GetChildren()) do
+                    if Tool:IsA("Tool") and Tool.Name:lower():match("gun|knife|bat|weapon") then
+                        IsCriminal = true
+                        ThreatLevel = 1
+                    end
+                end
+                
+                -- Check for hostile states (if detectable)
+                if Hum and Hum.Health < Hum.MaxHealth then
+                    IsCriminal = true
+                    ThreatLevel = 2
+                end
+                
+                if IsCriminal and HR then
+                    -- Draw Box ESP
+                    local Box = Instance.new("Frame")
+                    Box.Size = UDim2.new(0, 50, 0, 70)
+                    Box.BackgroundColor3 = ESP_THREAT_COLOR
+                    Box.BackgroundTransparency = 0.3
+                    Box.BorderSizePixel = 2
+                    Box.BorderColor3 = Color3.fromRGB(255, 255, 255)
+                    Box.Parent = EspGui
+                    
+                    -- Position box over head
+                    local ScreenPos, OnScreen = Camera:WorldToViewportPoint(HR.Position + Vector3.new(0, 3, 0))
+                    if OnScreen then
+                        Box.Position = UDim2.new(0, ScreenPos.X - 25, 0, ScreenPos.Y - 35)
+                        
+                        -- Draw Tracking Line
+                        local Line = Instance.new("Frame")
+                        Line.Size = UDim2.new(0, 2, 0, (Vector2.new(ScreenPos.X, ScreenPos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)).Magnitude)
+                        Line.BackgroundColor3 = ESP_TRACK_COLOR
+                        Line.Rotation = math.deg(math.atan2(ScreenPos.Y - Camera.ViewportSize.Y/2, ScreenPos.X - Camera.ViewportSize.X/2))
+                        Line.AnchorPoint = Vector2.new(0.5, 0)
+                        Line.Position = UDim2.new(0, Camera.ViewportSize.X/2, 0, Camera.ViewportSize.Y/2)
+                        Line.Parent = EspGui
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Update ESP every frame
+    RunService.RenderStepped:Connect(UpdateThreatDisplay)
+end
+
+-- 4. AUTO-DETECT EXPLOITER (BEHAVIORAL ANALYSIS)
+local function InitExploiterDetection()
+    local function AnalyzePlayer(Player)
+        if Player == LocalPlayer or not Player.Character then return false end
+        
+        local HR = Player.Character:FindFirstChild("HumanoidRootPart")
+        local Hum = Player.Character:FindFirstChildOfClass("Humanoid")
+        
+        if not HR or not Hum then return false end
+        
+        -- ANOMALY CHECKS
+        local AnomalyScore = 0
+        
+        -- Speed Check
+        local Velocity = HR.Velocity.Magnitude
+        if Velocity > Hum.WalkSpeed * 1.5 then
+            AnomalyScore += 0.4
+        end
+        
+        -- Fly Check (Y-axis velocity without jumping)
+        if math.abs(HR.Velocity.Y) > 10 and not Hum:GetState() == Enum.HumanoidStateType.Jumping then
+            AnomalyScore += 0.5
+        end
+        
+        -- Noclip Check (Phase through walls heuristic)
+        -- Simplified: Check if position changed drastically without valid path
+        -- (In real impl, would use raycast validation)
+        
+        -- GUI Check (Scan CoreGui for foreign elements)
+        pcall(function()
+            local CoreGui = game:GetService("CoreGui")
+            local GuiCount = #CoreGui:GetChildren()
+            if GuiCount > 15 then -- Threshold for suspicious GUI count
+                AnomalyScore += 0.3
+            end
+        end)
+        
+        return AnomalyScore >= DETECTION_SENSITIVITY
+    end
+    
+    -- Periodic scan
+    task.spawn(function()
+        while true do
+            task.wait(2)
+            for _, Player in ipairs(Players:GetPlayers()) do
+                if AnalyzePlayer(Player) and not table.find(DetectedExploiters, Player) then
+                    table.insert(DetectedExploiters, Player)
+                    warn("[DEVIL DETECT] EXPLOITER IDENTIFIED: " .. Player.Name .. " | SCORE: HIGH")
+                    
+                    -- Auto-trigger punishment on detection
+                    ExecuteDevilPunishment(Player)
+                end
+            end
+        end
+    end)
+end
+
+-- 5. DEVIL PUNISHMENT: REALITY DISTORTION
+local function ExecuteDevilPunishment(TargetPlayer)
+    if IsPunishing or not TargetPlayer.Character then return end
+    IsPunishing = true
+    
+    task.spawn(function()
+        -- CREATE GHOST CLONES
+        for i = 1, GHOST_CLONE_COUNT do
+            local Clone = LocalPlayer.Character:Clone()
+            Clone.Name = "Ghost_" .. i
+            
+            -- Make clone visible but fake
+            for _, Part in ipairs(Clone:GetDescendants()) do
+                if Part:IsA("BasePart") then
+                    Part.LocalTransparencyModifier = 0.5
+                    Part.Material = Enum.Material.Neon
+                    Part.Color = Color3.fromRGB(255, 0, 0)
+                end
+            end
+            
+            -- Position clone at random offset
+            local Offset = Vector3.new(math.random(-20, 20), 0, math.random(-20, 20))
+            Clone:MoveTo(RootPart.Position + Offset)
+            Clone.Parent = Workspace
+            
+            -- Animate clone to move erratically
+            task.spawn(function()
+                for j = 1, 50 do
+                    task.wait(0.1)
+                    if Clone and Clone.PrimaryPart then
+                        Clone:TranslateBy(Vector3.new(math.random(-2, 2), math.random(-1, 1), math.random(-2, 2)))
+                    end
+                end
+                if Clone and Clone.Parent then Clone:Destroy() end
+            end)
+            
+            table.insert(GhostClones, Clone)
+        end
+        
+        -- MEMORY FLOOD (Legacy Brutal Feature)
+        pcall(function()
+            local TargetHR = TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if TargetHR then
+                for i = 1, 300 do
+                    local Trash = Instance.new("Part")
+                    Trash.Size = Vector3.new(0.05, 0.05, 0.05)
+                    Trash.Transparency = 1
+                    Trash.CanCollide = false
+                    Trash.Anchored = true
+                    Trash.Position = TargetHR.Position + Vector3.new(math.random(-3, 3), math.random(-3, 3), math.random(-3, 3))
+                    Trash.Parent = Workspace
+                    task.delay(3, function() if Trash.Parent then Trash:Destroy() end end)
+                end
+            end
+        end)
+        
+        -- Reset punishment flag after duration
+        task.delay(5, function()
+            IsPunishing = false
+            -- Cleanup remaining ghosts
+            for _, Ghost in ipairs(GhostClones) do
+                if Ghost and Ghost.Parent then Ghost:Destroy() end
+            end
+            GhostClones = {}
+        end)
+    end)
+end
+
+-- [INITIALIZATION SEQUENCE]
+local function Initialize()
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    Character:WaitForChild("HumanoidRootPart")
+    Humanoid = Character:WaitForChild("Humanoid")
+    RootPart = Character:FindFirstChild("HumanoidRootPart")
+    
+    -- Stealth Layer (Always Active)
+    for _, Desc in ipairs(Character:GetDescendants()) do
+        if Desc:IsA("BasePart") then
+            Desc.LocalTransparencyModifier = 1
+            Desc.Material = Enum.Material.SmoothPlastic
+            Desc.Color = Color3.fromRGB(0, 0, 0)
+        end
+    end
+    
+    -- NameTag Removal
+    local Head = Character:FindFirstChild("Head")
+    if Head then
+        for _, Tag in ipairs(Head:GetChildren()) do
+            if Tag:IsA("BillboardGui") or Tag.Name == "NameTag" then
+                Tag:Destroy()
+            end
+        end
+    end
+    
+    -- Activate All Modules
+    InitHealthSystem()
+    InitAmmoSystem()
+    InitThreatESP()
+    InitExploiterDetection()
+    
+    warn("[SKYFALL HUB v5.0] DEVIL'S WRATH KERNEL ONLINE. OMNIPOTENCE ACHIEVED.")
+end
+
+-- [RESPAWN HANDLER]
+LocalPlayer.CharacterAdded:Connect(function(NewChar)
+    task.wait(0.1)
+    Character = NewChar
+    Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    RootPart = Character:FindFirstChild("HumanoidRootPart")
+    
+    if Humanoid then
+        Humanoid.MaxHealth = MAX_HEALTH
+        Humanoid.Health = MAX_HEALTH
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    end
+    
+    -- Re-apply stealth
+    for _, Desc in ipairs(Character:GetDescendants()) do
+        if Desc:IsA("BasePart") then
+            Desc.LocalTransparencyModifier = 1
+        end
+    end
+end)
+
+-- [EXECUTE]
+task.spawn(Initialize)
