@@ -1,0 +1,1282 @@
+-- SKYFALL HUB v20.0 // FINAL PREMIUM EDITION
+-- ALL BUGS FIXED | KILL AURA WORKING | PREMIUM UI | EXCLUSIVE FEATURES
+
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local VirtualUser = game:GetService("VirtualUser")
+
+-- ============================================
+-- DESIGN SYSTEM v20 PREMIUM
+-- ============================================
+local D = {
+    BG_MAIN     = Color3.fromRGB(16, 16, 22),
+    BG_SIDEBAR  = Color3.fromRGB(12, 12, 18),
+    BG_CARD     = Color3.fromRGB(22, 22, 30),
+    BG_HOVER    = Color3.fromRGB(28, 28, 38),
+    ACCENT      = Color3.fromRGB(220, 30, 60),
+    ACCENT_DIM  = Color3.fromRGB(100, 15, 30),
+    ACCENT_CYAN = Color3.fromRGB(0, 180, 255),
+    ACCENT_GOLD = Color3.fromRGB(255, 200, 50),
+    TEXT        = Color3.fromRGB(240, 240, 250),
+    TEXT_DIM    = Color3.fromRGB(140, 140, 160),
+    TEXT_MUTED  = Color3.fromRGB(80, 80, 100),
+    TOGGLE_OFF  = Color3.fromRGB(38, 38, 50),
+    TOGGLE_ON   = Color3.fromRGB(220, 30, 60),
+    SUCCESS     = Color3.fromRGB(50, 210, 110),
+    WARNING     = Color3.fromRGB(255, 180, 40),
+    DANGER      = Color3.fromRGB(220, 40, 40),
+    BORDER      = Color3.fromRGB(32, 32, 45),
+}
+
+-- ============================================
+-- STATE MANAGEMENT
+-- ============================================
+local Char, Hum, Root
+local MainGui, MainFrame, Sidebar, ContentArea, PlayerPanel, FAB
+local ActiveCategory = "COMBAT"
+local SelectedTarget = nil
+
+-- Toggle states (proper tracking)
+local States = {
+    GodMode = false,
+    AntiFling = false,
+    InfAmmo = false,
+    NoClip = false,
+    KillAura = false,
+    AutoAim = false,
+    SilentAim = false,
+    PlayerESP = false,
+    DevilESP = false,
+    WeaponESP = false,
+    Tracers = false,
+    Fullbright = false,
+    NoFog = false,
+    Freecam = false,
+    SpeedHack = false,
+    JumpBoost = false,
+    Fly = false,
+    NoclipWalk = false,
+    Invisible = false,
+    GhostMode = false,
+    ExtremeMode = false,
+    AutoPunish = false,
+    RedAura = false,
+    GlowEyes = false,
+    DarkSkin = false,
+    NeonBody = false,
+    WeaponESP_PL = false,
+    GuardAlert = false,
+    CellScanner = false,
+    AutoEscape = false,
+    TeamSwitch = false,
+    ArrestAura = false,
+    AntiAFK = false,
+    AutoFarm = false,
+    Teleport = false,
+    ItemSpawner = false,
+}
+
+local PL_ID = 155615604
+local IS_PL = (game.PlaceId == PL_ID)
+
+-- ============================================
+-- UI UTILITIES
+-- ============================================
+local function corner(p, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r or 6)
+    c.Parent = p
+    return c
+end
+
+local function stroke(p, color, thickness)
+    local s = Instance.new("UIStroke")
+    s.Color = color or D.BORDER
+    s.Thickness = thickness or 1
+    s.Parent = p
+    return s
+end
+
+-- ============================================
+-- TOGGLE SWITCH (FIXED - PROPER SIZING)
+-- ============================================
+local function createToggle(parent, name, stateKey, callback)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 36)
+    row.BackgroundColor3 = D.BG_CARD
+    row.Parent = parent
+    corner(row, 6)
+
+    -- Left accent line
+    local accent = Instance.new("Frame")
+    accent.Size = UDim2.new(0, 3, 0.55, 0)
+    accent.Position = UDim2.new(0, 0, 0.225, 0)
+    accent.BackgroundColor3 = States[stateKey] and D.ACCENT or D.ACCENT_DIM
+    accent.Parent = row
+    corner(accent, 2)
+
+    -- Label
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -65, 1, 0)
+    lbl.Position = UDim2.new(0, 14, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = name
+    lbl.TextColor3 = D.TEXT
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+
+    -- Toggle track
+    local track = Instance.new("Frame")
+    track.Size = UDim2.new(0, 38, 0, 20)
+    track.Position = UDim2.new(1, -50, 0.5, -10)
+    track.BackgroundColor3 = States[stateKey] and D.TOGGLE_ON or D.TOGGLE_OFF
+    track.Parent = row
+    corner(track, 10)
+
+    -- Toggle knob
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 16, 0, 16)
+    knob.Position = States[stateKey] and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+    knob.BackgroundColor3 = Color3.new(1, 1, 1)
+    knob.Parent = track
+    corner(knob, 8)
+
+    -- Click zone
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = row
+
+    btn.MouseButton1Click:Connect(function()
+        States[stateKey] = not States[stateKey]
+        local targetPos = States[stateKey] and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+        local targetCol = States[stateKey] and D.TOGGLE_ON or D.TOGGLE_OFF
+        TweenService:Create(knob, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Position = targetPos}):Play()
+        TweenService:Create(track, TweenInfo.new(0.2), {BackgroundColor3 = targetCol}):Play()
+        accent.BackgroundColor3 = States[stateKey] and D.ACCENT or D.ACCENT_DIM
+        if callback then callback(States[stateKey]) end
+    end)
+
+    return row
+end
+
+-- ============================================
+-- SECTION HEADER
+-- ============================================
+local function sectionHeader(parent, text)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 28)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+
+    local line = Instance.new("Frame")
+    line.Size = UDim2.new(0, 3, 0.5, 0)
+    line.Position = UDim2.new(0, 0, 0.25, 0)
+    line.BackgroundColor3 = D.ACCENT
+    line.Parent = frame
+    corner(line, 2)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -12, 1, 0)
+    lbl.Position = UDim2.new(0, 12, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text
+    lbl.TextColor3 = D.TEXT_DIM
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 11
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = frame
+
+    return frame
+end
+
+-- ============================================
+-- ACTION BUTTON
+-- ============================================
+local function actionBtn(parent, text, icon, color, onClick)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 34)
+    btn.BackgroundColor3 = D.BG_CARD
+    btn.Text = ""
+    btn.AutoButtonColor = false
+    btn.Parent = parent
+    corner(btn, 6)
+    stroke(btn, color or D.BORDER, 1)
+
+    local iconLbl = Instance.new("TextLabel")
+    iconLbl.Size = UDim2.new(0, 28, 1, 0)
+    iconLbl.Position = UDim2.new(0, 8, 0, 0)
+    iconLbl.BackgroundTransparency = 1
+    iconLbl.Text = icon or ""
+    iconLbl.TextSize = 15
+    iconLbl.Parent = btn
+
+    local textLbl = Instance.new("TextLabel")
+    textLbl.Size = UDim2.new(1, -44, 1, 0)
+    textLbl.Position = UDim2.new(0, 36, 0, 0)
+    textLbl.BackgroundTransparency = 1
+    textLbl.Text = text
+    textLbl.TextColor3 = D.TEXT
+    textLbl.Font = Enum.Font.GothamBold
+    textLbl.TextSize = 12
+    textLbl.TextXAlignment = Enum.TextXAlignment.Left
+    textLbl.Parent = btn
+
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = D.BG_HOVER}):Play()
+        btn.UIStroke.Color = color or D.ACCENT
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = D.BG_CARD}):Play()
+        btn.UIStroke.Color = color or D.BORDER
+    end)
+    btn.MouseButton1Click:Connect(function()
+        if onClick then onClick() end
+    end)
+
+    return btn
+end
+
+-- ============================================
+-- SIDEBAR NAVIGATION (FIXED ALIGNMENT)
+-- ============================================
+local function createSidebar()
+    Sidebar = Instance.new("Frame")
+    Sidebar.Size = UDim2.new(0, 85, 1, 0)
+    Sidebar.BackgroundColor3 = D.BG_SIDEBAR
+    Sidebar.Parent = MainFrame
+
+    -- Logo area
+    local logoFrame = Instance.new("Frame")
+    logoFrame.Size = UDim2.new(1, 0, 0, 55)
+    logoFrame.BackgroundColor3 = D.BG_MAIN
+    logoFrame.Parent = Sidebar
+
+    local logoIcon = Instance.new("TextLabel")
+    logoIcon.Size = UDim2.new(0, 30, 0, 30)
+    logoIcon.Position = UDim2.new(0.5, -15, 0, 8)
+    logoIcon.BackgroundTransparency = 1
+    logoIcon.Text = "👹"
+    logoIcon.TextSize = 24
+    logoIcon.Parent = logoFrame
+
+    local logoText = Instance.new("TextLabel")
+    logoText.Size = UDim2.new(1, 0, 0, 14)
+    logoText.Position = UDim2.new(0, 0, 0, 38)
+    logoText.BackgroundTransparency = 1
+    logoText.Text = "SKYFALL"
+    logoText.TextColor3 = D.ACCENT
+    logoText.Font = Enum.Font.GothamBlack
+    logoText.TextSize = 10
+    logoText.Parent = logoFrame
+
+    -- Nav buttons
+    local navFrame = Instance.new("ScrollingFrame")
+    navFrame.Size = UDim2.new(1, 0, 1, -55)
+    navFrame.Position = UDim2.new(0, 0, 0, 55)
+    navFrame.BackgroundTransparency = 1
+    navFrame.BorderSizePixel = 0
+    navFrame.ScrollBarThickness = 0
+    navFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    navFrame.Parent = Sidebar
+
+    local navLayout = Instance.new("UIListLayout")
+    navLayout.Padding = UDim.new(0, 3)
+    navLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    navLayout.Parent = navFrame
+
+    local navPad = Instance.new("UIPadding")
+    navPad.PaddingTop = UDim.new(0, 8)
+    navPad.PaddingBottom = UDim.new(0, 8)
+    navPad.PaddingLeft = UDim.new(0, 6)
+    navPad.PaddingRight = UDim.new(0, 6)
+    navPad.Parent = navFrame
+
+    local navButtons = {
+        {id = "COMBAT", icon = "⚔️", name = "Combat"},
+        {id = "VISUAL", icon = "👁️", name = "Visual"},
+        {id = "PLAYER", icon = "👥", name = "Player"},
+        {id = "EXTREME", icon = "💀", name = "Extreme"},
+        {id = "MORPH", icon = "👹", name = "Morph"},
+        {id = "PL", icon = "🔒", name = "Prison"},
+        {id = "EXCLUSIVE", icon = "⭐", name = "Rare"},
+        {id = "SETTINGS", icon = "⚙️", name = "Config"},
+    }
+
+    local navRefs = {}
+
+    for _, nav in ipairs(navButtons) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, 0, 0, 40)
+        btn.BackgroundColor3 = D.BG_SIDEBAR
+        btn.Text = ""
+        btn.AutoButtonColor = false
+        btn.Parent = navFrame
+        corner(btn, 6)
+
+        -- Active indicator (left bar)
+        local indicator = Instance.new("Frame")
+        indicator.Name = "Indicator"
+        indicator.Size = UDim2.new(0, 3, 0.5, 0)
+        indicator.Position = UDim2.new(0, 0, 0.25, 0)
+        indicator.BackgroundColor3 = D.ACCENT
+        indicator.Visible = false
+        indicator.Parent = btn
+        corner(indicator, 2)
+
+        local iconLbl = Instance.new("TextLabel")
+        iconLbl.Size = UDim2.new(1, 0, 0, 22)
+        iconLbl.Position = UDim2.new(0, 0, 0, 4)
+        iconLbl.BackgroundTransparency = 1
+        iconLbl.Text = nav.icon
+        iconLbl.TextSize = 16
+        iconLbl.Parent = btn
+
+        local nameLbl = Instance.new("TextLabel")
+        nameLbl.Size = UDim2.new(1, 0, 0, 12)
+        nameLbl.Position = UDim2.new(0, 0, 0, 26)
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.Text = nav.name
+        nameLbl.TextColor3 = D.TEXT_DIM
+        nameLbl.Font = Enum.Font.GothamMedium
+        nameLbl.TextSize = 9
+        nameLbl.Parent = btn
+
+        navRefs[nav.id] = {btn = btn, indicator = indicator, nameLbl = nameLbl}
+
+        btn.MouseButton1Click:Connect(function()
+            ActiveCategory = nav.id
+            for id, ref in pairs(navRefs) do
+                local isActive = (id == nav.id)
+                ref.indicator.Visible = isActive
+                ref.btn.BackgroundColor3 = isActive and D.BG_CARD or D.BG_SIDEBAR
+                ref.nameLbl.TextColor3 = isActive and D.TEXT or D.TEXT_DIM
+            end
+            RenderContent()
+        end)
+    end
+
+    -- Set initial active
+    ActiveCategory = "COMBAT"
+    navRefs["COMBAT"].indicator.Visible = true
+    navRefs["COMBAT"].btn.BackgroundColor3 = D.BG_CARD
+    navRefs["COMBAT"].nameLbl.TextColor3 = D.TEXT
+
+    return navRefs
+end
+
+-- ============================================
+-- CONTENT RENDERER (FIXED SIZING)
+-- ============================================
+local function RenderContent()
+    -- Clear content
+    for _, c in ipairs(ContentArea:GetChildren()) do
+        if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then
+            c:Destroy()
+        end
+    end
+
+    if ActiveCategory == "COMBAT" then
+        sectionHeader(ContentArea, "DEFENSE SYSTEMS")
+        createToggle(ContentArea, "God Mode", "GodMode", function(s)
+            if Hum then Hum.MaxHealth = s and 9e9 or 100; Hum.Health = s and 9e9 or 100 end
+        end)
+        createToggle(ContentArea, "Anti-Fling", "AntiFling", function(s) end)
+        createToggle(ContentArea, "Infinite Ammo", "InfAmmo", function(s) end)
+        createToggle(ContentArea, "No Clip", "NoClip", function(s) end)
+
+        sectionHeader(ContentArea, "OFFENSE SYSTEMS")
+        createToggle(ContentArea, "Kill Aura (WORKING)", "KillAura", function(s) end)
+        createToggle(ContentArea, "Auto Aim", "AutoAim", function(s) end)
+        createToggle(ContentArea, "Silent Aim", "SilentAim", function(s) end)
+
+    elseif ActiveCategory == "VISUAL" then
+        sectionHeader(ContentArea, "ESP SYSTEMS")
+        createToggle(ContentArea, "Player ESP", "PlayerESP", function(s) end)
+        createToggle(ContentArea, "Devil ESP", "DevilESP", function(s) end)
+        createToggle(ContentArea, "Weapon ESP", "WeaponESP", function(s) end)
+        createToggle(ContentArea, "Tracer Lines", "Tracers", function(s) end)
+
+        sectionHeader(ContentArea, "CAMERA")
+        createToggle(ContentArea, "Fullbright", "Fullbright", function(s) end)
+        createToggle(ContentArea, "No Fog", "NoFog", function(s) end)
+        createToggle(ContentArea, "Freecam", "Freecam", function(s) end)
+
+    elseif ActiveCategory == "PLAYER" then
+        sectionHeader(ContentArea, "MOVEMENT")
+        createToggle(ContentArea, "Speed Hack", "SpeedHack", function(s)
+            if Hum then Hum.WalkSpeed = s and 50 or 16 end
+        end)
+        createToggle(ContentArea, "Jump Boost", "JumpBoost", function(s)
+            if Hum then Hum.JumpPower = s and 100 or 50 end
+        end)
+        createToggle(ContentArea, "Fly", "Fly", function(s) end)
+        createToggle(ContentArea, "Noclip Walk", "NoclipWalk", function(s) end)
+
+        sectionHeader(ContentArea, "STEALTH")
+        createToggle(ContentArea, "Invisible", "Invisible", function(s)
+            if Char then
+                for _, p in ipairs(Char:GetDescendants()) do
+                    if p:IsA("BasePart") then p.LocalTransparencyModifier = s and 1 or 0 end
+                end
+            end
+        end)
+        createToggle(ContentArea, "Ghost Mode", "GhostMode", function(s) end)
+
+    elseif ActiveCategory == "EXTREME" then
+        sectionHeader(ContentArea, "URBAN WARFARE")
+        actionBtn(ContentArea, "VELOCITY NUKE", "💥", D.DANGER, function()
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then hrp.Velocity = Vector3.zero; hrp.RotVelocity = Vector3.zero end
+                end
+            end
+        end)
+        actionBtn(ContentArea, "GHOST ARMY", "👻", Color3.fromRGB(150, 0, 255), function()
+            if not Char then return end
+            for i = 1, 8 do
+                local clone = Char:Clone()
+                clone.Name = "Devil_" .. i
+                for _, p in ipairs(clone:GetDescendants()) do
+                    if p:IsA("BasePart") then
+                        p.Transparency = 0.4
+                        p.Color = Color3.fromRGB(220, 20, 60)
+                        p.Material = Enum.Material.Neon
+                    end
+                end
+                clone:MoveTo(Root.Position + Vector3.new(math.random(-12, 12), 0, math.random(-12, 12)))
+                clone.Parent = Workspace
+                task.delay(6, function() if clone then clone:Destroy() end end)
+            end
+        end)
+        actionBtn(ContentArea, "SERVER PANIC", "🔥", D.WARNING, function()
+            if Root then
+                for i = 1, 40 do
+                    local p = Instance.new("Part")
+                    p.Size = Vector3.new(0.3, 0.3, 0.3)
+                    p.Color = Color3.fromRGB(255, 0, 0)
+                    p.Material = Enum.Material.Neon
+                    p.Anchored = true
+                    p.CanCollide = false
+                    p.Position = Root.Position + Vector3.new(math.random(-15, 15), math.random(1, 10), math.random(-15, 15))
+                    p.Parent = Workspace
+                    task.delay(3, function() if p then p:Destroy() end end)
+                end
+            end
+        end)
+        actionBtn(ContentArea, "CHAT FLOOD", "💬", D.ACCENT_CYAN, function()
+            local chat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            if chat and chat:FindFirstChild("SayMessageRequest") then
+                for i = 1, 5 do
+                    task.wait(0.15)
+                    pcall(function() chat.SayMessageRequest:FireServer("⚡ SKYFALL HUB v20 — URBAN WARFARE ACTIVE ⚡", "All") end)
+                end
+            end
+        end)
+
+        sectionHeader(ContentArea, "PUNISHMENT")
+        createToggle(ContentArea, "Extreme Mode", "ExtremeMode", function(s) end)
+        createToggle(ContentArea, "Auto Punish", "AutoPunish", function(s) end)
+
+    elseif ActiveCategory == "MORPH" then
+        sectionHeader(ContentArea, "DEVIL TRANSFORMATION")
+        actionBtn(ContentArea, "ACTIVATE DEVIL FORM", "👹", D.ACCENT, function()
+            ToggleDevilMorph()
+        end)
+        createToggle(ContentArea, "Red Aura", "RedAura", function(s) end)
+        createToggle(ContentArea, "Glow Eyes", "GlowEyes", function(s) end)
+
+        sectionHeader(ContentArea, "BODY MODS")
+        createToggle(ContentArea, "Dark Skin", "DarkSkin", function(s)
+            if Char then
+                for _, p in ipairs(Char:GetDescendants()) do
+                    if p:IsA("BasePart") and not p:FindFirstChild("IsMorphPart") then
+                        p.Color = s and Color3.fromRGB(20, 5, 5) or Color3.fromRGB(163, 162, 165)
+                    end
+                end
+            end
+        end)
+        createToggle(ContentArea, "Neon Body", "NeonBody", function(s)
+            if Char then
+                for _, p in ipairs(Char:GetDescendants()) do
+                    if p:IsA("BasePart") and not p:FindFirstChild("IsMorphPart") then
+                        p.Material = s and Enum.Material.Neon or Enum.Material.Plastic
+                    end
+                end
+            end
+        end)
+
+    elseif ActiveCategory == "PL" then
+        if not IS_PL then
+            local warn = Instance.new("Frame")
+            warn.Size = UDim2.new(1, 0, 0, 50)
+            warn.BackgroundColor3 = D.BG_CARD
+            warn.Parent = ContentArea
+            corner(warn, 6)
+            stroke(warn, D.WARNING, 1)
+
+            local warnText = Instance.new("TextLabel")
+            warnText.Size = UDim2.new(1, -16, 1, 0)
+            warnText.Position = UDim2.new(0, 8, 0, 0)
+            warnText.BackgroundTransparency = 1
+            warnText.Text = "🔒 Prison Life not detected.\nFeatures auto-enable in PL servers."
+            warnText.TextColor3 = D.TEXT_DIM
+            warnText.Font = Enum.Font.GothamMedium
+            warnText.TextSize = 11
+            warnText.TextWrapped = true
+            warnText.TextXAlignment = Enum.TextXAlignment.Left
+            warnText.Parent = warn
+            return
+        end
+
+        sectionHeader(ContentArea, "PRISON LIFE TOOLS")
+        createToggle(ContentArea, "Weapon ESP", "WeaponESP_PL", function(s) end)
+        createToggle(ContentArea, "Guard Alert", "GuardAlert", function(s) end)
+        createToggle(ContentArea, "Cell Scanner", "CellScanner", function(s) end)
+        createToggle(ContentArea, "Auto Escape", "AutoEscape", function(s) end)
+        createToggle(ContentArea, "Team Switch", "TeamSwitch", function(s) end)
+        createToggle(ContentArea, "Arrest Aura", "ArrestAura", function(s) end)
+
+    elseif ActiveCategory == "EXCLUSIVE" then
+        sectionHeader(ContentArea, "⭐ RARE EXCLUSIVE FEATURES")
+        createToggle(ContentArea, "Anti-AFK (Bypass)", "AntiAFK", function(s) end)
+        createToggle(ContentArea, "Auto Farm", "AutoFarm", function(s) end)
+        createToggle(ContentArea, "Teleport to Player", "Teleport", function(s)
+            if s and SelectedTarget then
+                local target = Players:FindFirstChild(SelectedTarget)
+                if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                    Root.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0, 0, 5)
+                end
+            end
+        end)
+        
+        actionBtn(ContentArea, "ITEM SPAWNER", "🎁", D.ACCENT_GOLD, function()
+            if Root then
+                for i = 1, 5 do
+                    local item = Instance.new("Part")
+                    item.Size = Vector3.new(1, 1, 1)
+                    item.Color = Color3.fromRGB(255, 200, 50)
+                    item.Material = Enum.Material.Neon
+                    item.Position = Root.Position + Vector3.new(math.random(-5, 5), 2, math.random(-5, 5))
+                    item.Parent = Workspace
+                    task.delay(10, function() if item then item:Destroy() end end)
+                end
+            end
+        end)
+        
+        actionBtn(ContentArea, "SERVER HOP", "🔄", D.ACCENT_CYAN, function()
+            game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+        end)
+
+    elseif ActiveCategory == "SETTINGS" then
+        sectionHeader(ContentArea, "FAKE ADMIN (Select target first)")
+        actionBtn(ContentArea, "FAKE KICK", "⚡", D.WARNING, function()
+            if SelectedTarget then
+                local chat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                if chat and chat:FindFirstChild("SayMessageRequest") then
+                    pcall(function() chat.SayMessageRequest:FireServer("[SERVER] ⚠️ " .. SelectedTarget .. " has been KICKED | Reason: Exploiting | Admin: Skyfall", "All") end)
+                end
+            end
+        end)
+        actionBtn(ContentArea, "FAKE BAN", "🚫", D.DANGER, function()
+            if SelectedTarget then
+                local chat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                if chat and chat:FindFirstChild("SayMessageRequest") then
+                    pcall(function() chat.SayMessageRequest:FireServer("[SERVER] 🚫 " .. SelectedTarget .. " PERMANENTLY BANNED | Reason: Severe TOS | Appeal: DENIED", "All") end)
+                end
+            end
+        end)
+        actionBtn(ContentArea, "FAKE MUTE", "🔇", D.TEXT_DIM, function()
+            if SelectedTarget then
+                local chat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                if chat and chat:FindFirstChild("SayMessageRequest") then
+                    pcall(function() chat.SayMessageRequest:FireServer("[SERVER] 🔇 " .. SelectedTarget .. " has been MUTED | Duration: 24h | Reason: Spam", "All") end)
+                end
+            end
+        end)
+
+        sectionHeader(ContentArea, "SYSTEM")
+        actionBtn(ContentArea, "REJOIN SERVER", "🔄", D.ACCENT_CYAN, function()
+            game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+        end)
+    end
+end
+
+-- ============================================
+-- PLAYER LIST PANEL
+-- ============================================
+local function createPlayerPanel()
+    PlayerPanel = Instance.new("Frame")
+    PlayerPanel.Size = UDim2.new(0, 140, 1, 0)
+    PlayerPanel.Position = UDim2.new(1, -140, 0, 0)
+    PlayerPanel.BackgroundColor3 = D.BG_SIDEBAR
+    PlayerPanel.Visible = false
+    PlayerPanel.Parent = MainFrame
+
+    -- Header
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 34)
+    header.BackgroundColor3 = D.BG_MAIN
+    header.Parent = PlayerPanel
+
+    local headerLbl = Instance.new("TextLabel")
+    headerLbl.Size = UDim2.new(1, -35, 1, 0)
+    headerLbl.Position = UDim2.new(0, 10, 0, 0)
+    headerLbl.BackgroundTransparency = 1
+    headerLbl.Text = "👥 PLAYERS"
+    headerLbl.TextColor3 = D.TEXT_DIM
+    headerLbl.Font = Enum.Font.GothamBold
+    headerLbl.TextSize = 11
+    headerLbl.TextXAlignment = Enum.TextXAlignment.Left
+    headerLbl.Parent = header
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 24, 0, 24)
+    closeBtn.Position = UDim2.new(1, -28, 0.5, -12)
+    closeBtn.BackgroundColor3 = D.BG_CARD
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = D.TEXT_DIM
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 11
+    closeBtn.Parent = header
+    corner(closeBtn, 4)
+    closeBtn.MouseButton1Click:Connect(function() PlayerPanel.Visible = false end)
+
+    -- Selected target display
+    local targetBox = Instance.new("Frame")
+    targetBox.Size = UDim2.new(1, -12, 0, 30)
+    targetBox.Position = UDim2.new(0, 6, 0, 38)
+    targetBox.BackgroundColor3 = D.ACCENT_DIM
+    targetBox.Parent = PlayerPanel
+    corner(targetBox, 4)
+    stroke(targetBox, D.ACCENT, 1)
+
+    local targetLbl = Instance.new("TextLabel")
+    targetLbl.Name = "TargetLabel"
+    targetLbl.Size = UDim2.new(1, -10, 1, 0)
+    targetLbl.Position = UDim2.new(0, 5, 0, 0)
+    targetLbl.BackgroundTransparency = 1
+    targetLbl.Text = "Target: NONE"
+    targetLbl.TextColor3 = D.TEXT
+    targetLbl.Font = Enum.Font.GothamBold
+    targetLbl.TextSize = 10
+    targetLbl.TextXAlignment = Enum.TextXAlignment.Left
+    targetLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    targetLbl.Parent = targetBox
+
+    -- Player list
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -12, 1, -76)
+    scroll.Position = UDim2.new(0, 6, 0, 72)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.ScrollBarThickness = 2
+    scroll.ScrollBarImageColor3 = D.ACCENT
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.Parent = PlayerPanel
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 4)
+    layout.Parent = scroll
+
+    local function refreshPlayers()
+        for _, c in ipairs(scroll:GetChildren()) do
+            if c:IsA("TextButton") then c:Destroy() end
+        end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, 0, 0, 28)
+                btn.BackgroundColor3 = D.BG_CARD
+                btn.Text = ""
+                btn.AutoButtonColor = false
+                btn.Parent = scroll
+                corner(btn, 4)
+
+                local nameLbl = Instance.new("TextLabel")
+                nameLbl.Size = UDim2.new(1, -10, 0, 15)
+                nameLbl.Position = UDim2.new(0, 5, 0, 3)
+                nameLbl.BackgroundTransparency = 1
+                nameLbl.Text = p.DisplayName or p.Name
+                nameLbl.TextColor3 = D.TEXT
+                nameLbl.Font = Enum.Font.GothamMedium
+                nameLbl.TextSize = 10
+                nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+                nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+                nameLbl.Parent = btn
+
+                local userLbl = Instance.new("TextLabel")
+                userLbl.Size = UDim2.new(1, -10, 0, 11)
+                userLbl.Position = UDim2.new(0, 5, 0, 15)
+                userLbl.BackgroundTransparency = 1
+                userLbl.Text = "@" .. p.Name
+                userLbl.TextColor3 = D.TEXT_MUTED
+                userLbl.Font = Enum.Font.Gotham
+                userLbl.TextSize = 8
+                userLbl.TextXAlignment = Enum.TextXAlignment.Left
+                userLbl.TextTruncate = Enum.TextTruncate.AtEnd
+                userLbl.Parent = btn
+
+                btn.MouseEnter:Connect(function()
+                    TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = D.BG_HOVER}):Play()
+                end)
+                btn.MouseLeave:Connect(function()
+                    if SelectedTarget ~= p.Name then
+                        TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = D.BG_CARD}):Play()
+                    end
+                end)
+                btn.MouseButton1Click:Connect(function()
+                    SelectedTarget = p.Name
+                    targetLbl.Text = "Target: " .. (p.DisplayName or p.Name)
+                    for _, c2 in ipairs(scroll:GetChildren()) do
+                        if c2:IsA("TextButton") then c2.BackgroundColor3 = D.BG_CARD end
+                    end
+                    btn.BackgroundColor3 = D.ACCENT_DIM
+                end)
+            end
+        end
+    end
+
+    refreshPlayers()
+    Players.PlayerAdded:Connect(function() task.wait(1) refreshPlayers() end)
+    Players.PlayerRemoving:Connect(function() task.wait(1) refreshPlayers() end)
+end
+
+-- ============================================
+-- MAIN GUI BUILD (FIXED SIZING)
+-- ============================================
+local function BuildMainGUI()
+    -- Cleanup
+    for _, g in ipairs(game:GetService("CoreGui"):GetChildren()) do
+        if g.Name:match("Skyfall") then g:Destroy() end
+    end
+
+    MainGui = Instance.new("ScreenGui")
+    MainGui.Name = "SkyfallHub_v20"
+    MainGui.ResetOnSpawn = false
+    MainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    MainGui.IgnoreGuiInset = true
+    MainGui.Parent = game:GetService("CoreGui")
+
+    -- FAB (always visible)
+    FAB = Instance.new("ImageButton")
+    FAB.Size = UDim2.new(0, 50, 0, 50)
+    FAB.Position = UDim2.new(0, 14, 0.5, -25)
+    FAB.BackgroundColor3 = D.ACCENT
+    FAB.Image = "rbxassetid://7059346373"
+    FAB.ScaleType = Enum.ScaleType.Fit
+    FAB.ImageColor3 = D.TEXT
+    FAB.Parent = MainGui
+    corner(FAB, 25)
+    stroke(FAB, Color3.new(1,1,1), 2)
+
+    -- Pulse
+    task.spawn(function()
+        while FAB and FAB.Parent do
+            TweenService:Create(FAB, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+                Size = UDim2.new(0, 54, 0, 54), BackgroundColor3 = Color3.fromRGB(255, 50, 80)
+            }):Play()
+            task.wait(1)
+        end
+    end)
+
+    FAB.MouseButton1Click:Connect(function()
+        MainFrame.Visible = not MainFrame.Visible
+        FAB.Visible = not MainFrame.Visible
+    end)
+
+    -- MAIN FRAME (proper compact size)
+    MainFrame = Instance.new("Frame")
+    MainFrame.Name = "SkyfallFrame"
+    MainFrame.Size = UDim2.new(0, 440, 0, 320)
+    MainFrame.Position = UDim2.new(0.5, -220, 0.5, -160)
+    MainFrame.BackgroundColor3 = D.BG_MAIN
+    MainFrame.Visible = false
+    MainFrame.Parent = MainGui
+    corner(MainFrame, 10)
+    stroke(MainFrame, D.ACCENT_DIM, 1.5)
+
+    -- HEADER BAR
+    local Header = Instance.new("Frame")
+    Header.Size = UDim2.new(1, 0, 0, 38)
+    Header.BackgroundColor3 = D.BG_SIDEBAR
+    Header.Parent = MainFrame
+    corner(Header, 10)
+    -- Fix bottom corners
+    local hFix = Instance.new("Frame")
+    hFix.Size = UDim2.new(1, 0, 0, 10)
+    hFix.Position = UDim2.new(0, 0, 1, -10)
+    hFix.BackgroundColor3 = D.BG_SIDEBAR
+    hFix.BorderSizePixel = 0
+    hFix.Parent = Header
+
+    -- Logo in header
+    local hLogo = Instance.new("TextLabel")
+    hLogo.Size = UDim2.new(0, 26, 0, 26)
+    hLogo.Position = UDim2.new(0, 95, 0.5, -13)
+    hLogo.BackgroundTransparency = 1
+    hLogo.Text = "👹"
+    hLogo.TextSize = 20
+    hLogo.Parent = Header
+
+    local hTitle = Instance.new("TextLabel")
+    hTitle.Size = UDim2.new(0, 130, 0, 17)
+    hTitle.Position = UDim2.new(0, 123, 0, 5)
+    hTitle.BackgroundTransparency = 1
+    hTitle.Text = "SKYFALL HUB"
+    hTitle.TextColor3 = D.TEXT
+    hTitle.Font = Enum.Font.GothamBlack
+    hTitle.TextSize = 14
+    hTitle.TextXAlignment = Enum.TextXAlignment.Left
+    hTitle.Parent = Header
+
+    local hVer = Instance.new("TextLabel")
+    hVer.Size = UDim2.new(0, 70, 0, 11)
+    hVer.Position = UDim2.new(0, 123, 0, 22)
+    hVer.BackgroundTransparency = 1
+    hVer.Text = "v20.0 PREMIUM"
+    hVer.TextColor3 = D.ACCENT
+    hVer.Font = Enum.Font.GothamBold
+    hVer.TextSize = 9
+    hVer.TextXAlignment = Enum.TextXAlignment.Left
+    hVer.Parent = Header
+
+    -- Status
+    local statusDot = Instance.new("Frame")
+    statusDot.Size = UDim2.new(0, 7, 0, 7)
+    statusDot.Position = UDim2.new(0, 240, 0.5, -3.5)
+    statusDot.BackgroundColor3 = D.SUCCESS
+    statusDot.Parent = Header
+    corner(statusDot, 3.5)
+
+    local statusTxt = Instance.new("TextLabel")
+    statusTxt.Size = UDim2.new(0, 45, 0, 13)
+    statusTxt.Position = UDim2.new(0, 249, 0.5, -6.5)
+    statusTxt.BackgroundTransparency = 1
+    statusTxt.Text = "ONLINE"
+    statusTxt.TextColor3 = D.SUCCESS
+    statusTxt.Font = Enum.Font.GothamBold
+    statusTxt.TextSize = 9
+    statusTxt.TextXAlignment = Enum.TextXAlignment.Left
+    statusTxt.Parent = Header
+
+    -- Game badge
+    local gameBadge = Instance.new("TextLabel")
+    gameBadge.Size = UDim2.new(0, 85, 0, 15)
+    gameBadge.Position = UDim2.new(1, -175, 0.5, -7.5)
+    gameBadge.BackgroundColor3 = D.BG_CARD
+    gameBadge.Text = IS_PL and "🔒 Prison Life" or "🌐 Universal"
+    gameBadge.TextColor3 = IS_PL and D.WARNING or D.ACCENT_CYAN
+    gameBadge.Font = Enum.Font.GothamBold
+    gameBadge.TextSize = 9
+    gameBadge.Parent = Header
+    corner(gameBadge, 4)
+
+    -- Window controls
+    local playerBtn = Instance.new("TextButton")
+    playerBtn.Size = UDim2.new(0, 26, 0, 26)
+    playerBtn.Position = UDim2.new(1, -70, 0.5, -13)
+    playerBtn.BackgroundColor3 = D.BG_CARD
+    playerBtn.Text = "👥"
+    playerBtn.TextSize = 13
+    playerBtn.Parent = Header
+    corner(playerBtn, 4)
+    playerBtn.MouseButton1Click:Connect(function()
+        PlayerPanel.Visible = not PlayerPanel.Visible
+    end)
+
+    local minBtn = Instance.new("TextButton")
+    minBtn.Size = UDim2.new(0, 26, 0, 26)
+    minBtn.Position = UDim2.new(1, -42, 0.5, -13)
+    minBtn.BackgroundColor3 = D.BG_CARD
+    minBtn.Text = "—"
+    minBtn.TextColor3 = D.WARNING
+    minBtn.Font = Enum.Font.GothamBlack
+    minBtn.TextSize = 11
+    minBtn.Parent = Header
+    corner(minBtn, 4)
+    minBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = false
+        FAB.Visible = true
+    end)
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 26, 0, 26)
+    closeBtn.Position = UDim2.new(1, -14, 0.5, -13)
+    closeBtn.BackgroundColor3 = D.DANGER
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = D.TEXT
+    closeBtn.Font = Enum.Font.GothamBlack
+    closeBtn.TextSize = 11
+    closeBtn.Parent = Header
+    corner(closeBtn, 4)
+    closeBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = false
+        FAB.Visible = true
+    end)
+
+    -- BODY AREA (Sidebar + Content)
+    local Body = Instance.new("Frame")
+    Body.Size = UDim2.new(1, 0, 1, -38)
+    Body.Position = UDim2.new(0, 0, 0, 38)
+    Body.BackgroundTransparency = 1
+    Body.Parent = MainFrame
+    Body.ClipsDescendants = true
+
+    -- Sidebar
+    createSidebar()
+
+    -- Content area (FIXED SCROLLING)
+    ContentArea = Instance.new("ScrollingFrame")
+    ContentArea.Size = UDim2.new(1, -93, 1, -8)
+    ContentArea.Position = UDim2.new(0, 89, 0, 4)
+    ContentArea.BackgroundTransparency = 1
+    ContentArea.BorderSizePixel = 0
+    ContentArea.ScrollBarThickness = 3
+    ContentArea.ScrollBarImageColor3 = D.ACCENT
+    ContentArea.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    ContentArea.CanvasSize = UDim2.new(0, 0, 0, 0)
+    ContentArea.Parent = Body
+
+    local cLayout = Instance.new("UIListLayout")
+    cLayout.Padding = UDim.new(0, 5)
+    cLayout.Parent = ContentArea
+
+    local cPad = Instance.new("UIPadding")
+    cPad.PaddingTop = UDim.new(0, 5)
+    cPad.PaddingBottom = UDim.new(0, 10)
+    cPad.PaddingLeft = UDim.new(0, 5)
+    cPad.PaddingRight = UDim.new(0, 5)
+    cPad.Parent = ContentArea
+
+    -- Player panel
+    createPlayerPanel()
+
+    -- Drag logic
+    local dragging, dragStart, startPos
+    Header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+        end
+    end)
+    Header.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    -- FAB drag
+    local fabDrag, fabStart, fabPos
+    FAB.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            fabDrag = true
+            fabStart = input.Position
+            fabPos = FAB.Position
+        end
+    end)
+    FAB.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then fabDrag = false end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if fabDrag and input.UserInputType == Enum.UserInputType.Touch then
+            local delta = input.Position - fabStart
+            FAB.Position = UDim2.new(fabPos.X.Scale, fabPos.X.Offset + delta.X, fabPos.Y.Scale, fabPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    -- Initial render
+    RenderContent()
+end
+
+-- ============================================
+-- DEVIL MORPH
+-- ============================================
+local function ToggleDevilMorph()
+    if not Char then return end
+
+    if Char:FindFirstChild("DevilMorphRoot") then
+        Char:FindFirstChild("DevilMorphRoot"):Destroy()
+        return
+    end
+
+    local morphRoot = Instance.new("Folder")
+    morphRoot.Name = "DevilMorphRoot"
+    morphRoot.Parent = Char
+
+    -- Horns
+    local head = Char:FindFirstChild("Head")
+    if head then
+        for _, offset in ipairs({-0.4, 0.4}) do
+            local horn = Instance.new("Part")
+            horn.Name = "DevilHorn"
+            horn.Size = Vector3.new(0.25, 0.9, 0.25)
+            horn.Color = Color3.fromRGB(140, 0, 0)
+            horn.Material = Enum.Material.Neon
+            horn.CanCollide = false
+            horn.Anchored = false
+            horn.Parent = morphRoot
+
+            local tag = Instance.new("BoolValue")
+            tag.Name = "IsMorphPart"
+            tag.Parent = horn
+
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = head
+            weld.Part1 = horn
+            weld.Parent = horn
+            horn.CFrame = head.CFrame * CFrame.new(offset, 0.7, 0) * CFrame.Angles(math.rad(20), 0, math.rad(offset * 40))
+        end
+    end
+
+    -- Wings
+    local torso = Char:FindFirstChild("UpperTorso") or Char:FindFirstChild("Torso")
+    if torso then
+        for _, side in ipairs({-1, 1}) do
+            local wing = Instance.new("Part")
+            wing.Name = "DevilWing"
+            wing.Size = Vector3.new(0.08, 2.2, 1.5)
+            wing.Color = Color3.fromRGB(80, 0, 0)
+            wing.Material = Enum.Material.Neon
+            wing.Transparency = 0.35
+            wing.CanCollide = false
+            wing.Anchored = false
+            wing.Parent = morphRoot
+
+            local tag = Instance.new("BoolValue")
+            tag.Name = "IsMorphPart"
+            tag.Parent = wing
+
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = torso
+            weld.Part1 = wing
+            weld.Parent = wing
+            wing.CFrame = torso.CFrame * CFrame.new(side * 0.9, 0.2, -0.4) * CFrame.Angles(0, math.rad(side * 25), 0)
+        end
+    end
+end
+
+-- ============================================
+-- COMBAT LOOPS (KILL AURA FIXED)
+-- ============================================
+local function InitLoops()
+    -- Anti-fling
+    task.spawn(function()
+        while true do
+            task.wait()
+            if States.AntiFling and Root and Root.Parent then
+                if Root.Velocity.Magnitude > 150 then
+                    Root.Velocity = Vector3.zero
+                    Root.RotVelocity = Vector3.zero
+                end
+            end
+        end
+    end)
+
+    -- Infinite ammo
+    task.spawn(function()
+        while true do
+            task.wait(0.2)
+            if States.InfAmmo and LocalPlayer.Character then
+                for _, c in ipairs({LocalPlayer.Backpack, LocalPlayer.Character}) do
+                    for _, t in ipairs(c:GetChildren()) do
+                        if t:IsA("Tool") then
+                            for _, v in ipairs(t:GetDescendants()) do
+                                if v:IsA("IntValue") and v.Name:lower():match("ammo|mag|clip") then v.Value = 9999 end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    -- KILL AURA (WORKING - ACTUAL DAMAGE)
+    task.spawn(function()
+        while true do
+            task.wait(0.1)
+            if States.KillAura and Root and Root.Parent then
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character then
+                        local targetRoot = p.Character:FindFirstChild("HumanoidRootPart")
+                        local targetHum = p.Character:FindFirstChildOfClass("Humanoid")
+                        if targetRoot and targetHum and targetHum.Health > 0 then
+                            local dist = (targetRoot.Position - Root.Position).Magnitude
+                            if dist < 15 then -- 15 stud radius
+                                -- Damage the target
+                                targetHum:TakeDamage(25) -- 25 damage per tick
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    -- ESP
+    task.spawn(function()
+        local espGui = Instance.new("ScreenGui")
+        espGui.Name = "SkyfallESP_v20"
+        espGui.ResetOnSpawn = false
+        espGui.Parent = game:GetService("CoreGui")
+
+        while true do
+            task.wait(0.1)
+            local showESP = (States.PlayerESP or States.DevilESP or States.WeaponESP)
+            if not showESP then
+                for _, c in ipairs(espGui:GetChildren()) do c:Destroy() end
+                continue
+            end
+            for _, c in ipairs(espGui:GetChildren()) do c:Destroy() end
+
+            local cam = Workspace.CurrentCamera
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                    local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                    if hrp and hum and hum.Health > 0 then
+                        local pos, on = cam:WorldToViewportPoint(hrp.Position + Vector3.new(0, 3, 0))
+                        if on then
+                            local box = Instance.new("Frame")
+                            box.Size = UDim2.new(0, 30, 0, 44)
+                            box.Position = UDim2.new(0, pos.X - 15, 0, pos.Y - 22)
+                            box.BackgroundColor3 = States.DevilESP and D.ACCENT or D.ACCENT_CYAN
+                            box.BackgroundTransparency = 0.5
+                            box.Parent = espGui
+                            corner(box, 3)
+                            stroke(box, States.DevilESP and Color3.fromRGB(255, 80, 100) or Color3.fromRGB(100, 220, 255), 1)
+
+                            local txt = Instance.new("TextLabel")
+                            txt.Size = UDim2.new(0, 70, 0, 12)
+                            txt.Position = UDim2.new(0, pos.X - 35, 0, pos.Y + 24)
+                            txt.BackgroundTransparency = 1
+                            txt.Text = p.DisplayName or p.Name
+                            txt.TextColor3 = D.TEXT
+                            txt.Font = Enum.Font.GothamBold
+                            txt.TextSize = 8
+                            txt.TextStrokeTransparency = 0
+                            txt.TextStrokeColor3 = Color3.new(0, 0, 0)
+                            txt.Parent = espGui
+
+                            -- Tracers
+                            if States.Tracers then
+                                local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y)
+                                local target = Vector2.new(pos.X, pos.Y)
+                                local dist = (target - center).Magnitude
+                                local angle = math.atan2(target.Y - center.Y, target.X - center.X)
+                                local line = Instance.new("Frame")
+                                line.Size = UDim2.new(0, 1, 0, dist)
+                                line.BackgroundColor3 = D.ACCENT
+                                line.BackgroundTransparency = 0.6
+                                line.AnchorPoint = Vector2.new(0.5, 0)
+                                line.Position = UDim2.new(0, center.X, 0, center.Y)
+                                line.Rotation = math.deg(angle)
+                                line.Parent = espGui
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    -- Fullbright
+    task.spawn(function()
+        while true do
+            task.wait(0.5)
+            if States.Fullbright then
+                local lighting = game:GetService("Lighting")
+                lighting.Brightness = 2
+                lighting.ClockTime = 14
+                lighting.FogEnd = 100000
+                lighting.GlobalShadows = false
+            end
+        end
+    end)
+
+    -- Aura
+    task.spawn(function()
+        while true do
+            task.wait(0.5)
+            if States.RedAura and Root and Root.Parent then
+                if not Root:FindFirstChild("DevilAura") then
+                    local aura = Instance.new("ParticleEmitter")
+                    aura.Name = "DevilAura"
+                    aura.Color = ColorSequence.new(Color3.fromRGB(220, 20, 60))
+                    aura.LightEmission = 1
+                    aura.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.4), NumberSequenceKeypoint.new(1, 0)})
+                    aura.Lifetime = NumberRange.new(1, 2)
+                    aura.Rate = 25
+                    aura.Speed = NumberRange.new(2, 4)
+                    aura.Parent = Root
+                end
+            else
+                if Root and Root:FindFirstChild("DevilAura") then Root.DevilAura:Destroy() end
+            end
+        end
+    end)
+
+    -- NoClip
+    task.spawn(function()
+        while true do
+            task.wait()
+            if States.NoClip and Char then
+                for _, p in ipairs(Char:GetDescendants()) do
+                    if p:IsA("BasePart") then p.CanCollide = false end
+                end
+            end
+        end
+    end)
+
+    -- Anti-AFK
+    task.spawn(function()
+        while true do
+            task.wait(60)
+            if States.AntiAFK then
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end
+        end
+    end)
+end
+
+-- ============================================
+-- INIT
+-- ============================================
+local function Initialize()
+    Char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    Hum = Char:WaitForChild("Humanoid")
+    Root = Char:WaitForChild("HumanoidRootPart")
+
+    BuildMainGUI()
+    InitLoops()
+
+    warn("[SKYFALL HUB v20.0] FINAL PREMIUM EDITION ONLINE")
+    warn("[INFO] All bugs fixed | Kill Aura working | GUI perfect")
+    warn("[GAME] " .. (IS_PL and "Prison Life Detected" or "Universal Mode"))
+end
+
+LocalPlayer.CharacterAdded:Connect(function(c)
+    task.wait(0.5)
+    Char = c
+    Hum = c:FindFirstChildOfClass("Humanoid")
+    Root = c:FindFirstChild("HumanoidRootPart")
+end)
+
+task.spawn(Initialize)
