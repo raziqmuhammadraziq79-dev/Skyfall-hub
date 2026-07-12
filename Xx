@@ -1,0 +1,1181 @@
+-- ╔══════════════════════════════════════════════════╗
+-- ║   SKYFALLHUB v20 ULTRA MODE — 42 REAL FEATURES ║
+-- ╚══════════════════════════════════════════════════╝
+
+if _G.SF20 then _G.SF20:Destroy() end
+_G.SF20 = nil
+
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS        = game:GetService("UserInputService")
+local TS         = game:GetService("TweenService")
+local Lighting   = game:GetService("Lighting")
+local WS         = game:GetService("Workspace")
+local Stats      = game:GetService("Stats")
+local LP  = Players.LocalPlayer
+local PG  = LP:WaitForChild("PlayerGui")
+local Cam = WS.CurrentCamera
+
+-- Cleanup
+local _old = PG:FindFirstChild("SkyfallHubV20")
+if _old then _old:Destroy() end
+
+-- Device
+local MOBILE = UIS.TouchEnabled and not UIS.KeyboardEnabled
+local VP = Cam.ViewportSize
+
+-- Sizing
+local PW   = MOBILE and math.clamp(math.floor(VP.X*0.94),290,440) or math.clamp(math.floor(VP.X*0.70),480,800)
+local PH   = MOBILE and math.clamp(math.floor(VP.Y*0.80),340,520) or math.clamp(math.floor(VP.Y*0.78),400,560)
+local SIDE = MOBILE and 56 or 120
+local FS   = MOBILE and 10 or 12
+local FS2  = MOBILE and 11 or 14
+local PAD  = MOBILE and 6 or 10
+local TBH  = MOBILE and 42 or 50
+local ROW  = MOBILE and 28 or 28
+
+-- Theme
+local C = {
+    Bg     = Color3.fromRGB(8,12,24),
+    Panel  = Color3.fromRGB(12,18,38),
+    Card   = Color3.fromRGB(16,24,48),
+    Light  = Color3.fromRGB(20,30,58),
+    Stroke = Color3.fromRGB(35,70,145),
+    Blue   = Color3.fromRGB(50,140,255),
+    Purple = Color3.fromRGB(130,80,255),
+    Dim    = Color3.fromRGB(25,50,120),
+    Text   = Color3.fromRGB(220,232,255),
+    Sub    = Color3.fromRGB(100,130,185),
+    Green  = Color3.fromRGB(40,215,100),
+    Red    = Color3.fromRGB(255,65,65),
+    Yellow = Color3.fromRGB(255,200,20),
+    Off    = Color3.fromRGB(40,55,85),
+    W      = Color3.new(1,1,1),
+}
+
+-- State (42 features)
+local S = {
+    -- Universal (10)
+    God=false, Noclip=false, InfJump=false, Fly=false,
+    SpeedHack=false, AntiAFK=false, LowGrav=false,
+    AntiRag=false, InfStam=false, ClickTP=false,
+    -- Prison Life (8)
+    AntiCuff=false, AutoEscape=false, KillGuards=false,
+    TPFreedom=false, InvisGuards=false, AutoKeycard=false,
+    JailBreak=false, TeamSwitch=false,
+    -- Urban Warfare (8)
+    Aimbot=false, ESPPlayers=false, Wallhack=false,
+    NoRecoil=false, RapidFire=false, SilentAim=false,
+    Triggerbot=false, TeamCheck=false,
+    -- Evade (6)
+    AutoRun=false, NoclipDoors=false, AutoDodge=false,
+    SpeedBoost=false, TPCheckpoint=false, AutoWin=false,
+    -- Visuals (6)
+    ESPItems=false, Fullbright=false, NoFog=false,
+    Crosshair=false, ShowNames=false, BigHead=false,
+    -- Settings (4)
+    Theme=1, ToggleKey=Enum.KeyCode.RightShift,
+    -- Values
+    Speed=16, Jump=50, FlySpd=55, AimFOV=120, AimSmooth=0.15,
+}
+
+local Conn = {}
+local function aC(k,c) if Conn[k] then Conn[k]:Disconnect() end Conn[k]=c end
+local function dC(k) if Conn[k] then Conn[k]:Disconnect() Conn[k]=nil end end
+local function gH() local c=LP.Character return c and c:FindFirstChildOfClass("Humanoid") end
+local function gR() local c=LP.Character return c and c:FindFirstChild("HumanoidRootPart") end
+
+-- ══════════════════════════════════════════════════
+-- UNIVERSAL FEATURES (1-10)
+-- ══════════════════════════════════════════════════
+
+-- 1. God Mode
+local function fGod(v) S.God=v dC("God")
+    if v then aC("God",RunService.Heartbeat:Connect(function()
+        local h=gH() if h and h.Health<h.MaxHealth then h.Health=h.MaxHealth end
+    end)) end
+end
+
+-- 2. Noclip
+local function fNoclip(v) S.Noclip=v dC("NC")
+    if v then aC("NC",RunService.Stepped:Connect(function()
+        local c=LP.Character if not c then return end
+        for _,p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide=false end
+        end
+    end)) else
+        local c=LP.Character if c then
+            for _,p in ipairs(c:GetDescendants()) do
+                if p:IsA("BasePart") and p.Name~="HumanoidRootPart" then p.CanCollide=true end
+            end
+        end
+    end
+end
+
+-- 3. Infinite Jump
+local function fInfJump(v) S.InfJump=v dC("IJ")
+    if v then aC("IJ",UIS.JumpRequest:Connect(function()
+        local h=gH() if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end)) end
+end
+
+-- 4. Fly v2 (Hybrid BodyVelocity + BodyGyro)
+local fbv,fbg
+local function fFly(v) S.Fly=v dC("Fly")
+    local h=gH() local r=gR()
+    if v then
+        if not h or not r then LP.CharacterAdded:Wait() task.wait(0.3) h=gH() r=gR() end
+        if not h or not r then return end
+        h.PlatformStand=true
+        if fbv then pcall(function() fbv:Destroy() end) end
+        if fbg then pcall(function() fbg:Destroy() end) end
+        fbv=Instance.new("BodyVelocity")
+        fbv.Name="_SF20fly" fbv.MaxForce=Vector3.new(1e9,1e9,1e9)
+        fbv.Velocity=Vector3.zero fbv.Parent=r
+        fbg=Instance.new("BodyGyro")
+        fbg.Name="_SF20gyro" fbg.MaxTorque=Vector3.new(1e9,1e9,1e9)
+        fbg.P=10000 fbg.D=500 fbg.CFrame=r.CFrame fbg.Parent=r
+        aC("Fly",RunService.RenderStepped:Connect(function()
+            local cam=WS.CurrentCamera local d=Vector3.zero local spd=S.FlySpd
+            if UIS:IsKeyDown(Enum.KeyCode.W) then d+=cam.CFrame.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then d-=cam.CFrame.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then d-=cam.CFrame.RightVector end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then d+=cam.CFrame.RightVector end
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then d+=Vector3.yAxis end
+            if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then d-=Vector3.yAxis end
+            if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then spd=spd*2 end
+            local root=gR()
+            if fbv and root and fbv.Parent then
+                fbv.Velocity=(d.Magnitude>0 and d.Unit or d)*spd
+            end
+            if fbg and root and fbg.Parent then
+                fbg.CFrame=CFrame.lookAt(Vector3.zero,cam.CFrame.LookVector)
+            end
+            local hum=gH()
+            if hum then
+                hum.PlatformStand=true
+                if hum:GetState()==Enum.HumanoidStateType.Freefall then
+                    hum:ChangeState(Enum.HumanoidStateType.Swimming)
+                end
+            end
+        end))
+    else
+        if fbv then pcall(function() fbv:Destroy() end) fbv=nil end
+        if fbg then pcall(function() fbg:Destroy() end) fbg=nil end
+        local hum=gH() if hum then hum.PlatformStand=false end
+    end
+end
+
+-- 5. Speed Hack
+local function fSpeedHack(v) S.SpeedHack=v
+    local h=gH() if h then h.WalkSpeed=v and 100 or S.Speed end
+end
+
+-- 6. Anti AFK
+local function fAntiAFK(v) S.AntiAFK=v dC("AFK")
+    if v then
+        local vu=LP:FindFirstChildOfClass("VirtualUser") or Instance.new("VirtualUser",LP)
+        aC("AFK",LP.Idled:Connect(function() vu:CaptureController() vu:ClickButton2(Vector2.zero) end))
+    end
+end
+
+-- 7. Low Gravity
+local function fLowGrav(v) S.LowGrav=v WS.Gravity=v and 10 or 196.2 end
+
+-- 8. Anti Ragdoll
+local function fAntiRag(v) S.AntiRag=v dC("AR")
+    if v then aC("AR",RunService.Heartbeat:Connect(function()
+        local h=gH()
+        if h and (h:GetState()==Enum.HumanoidStateType.Ragdoll or h:GetState()==Enum.HumanoidStateType.FallingDown) then
+            h:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+    end)) end
+end
+
+-- 9. Infinite Stamina
+local function fInfStam(v) S.InfStam=v dC("IS")
+    if v then aC("IS",RunService.Heartbeat:Connect(function()
+        local c=LP.Character if not c then return end
+        for _,val in ipairs(c:GetDescendants()) do
+            if val:IsA("NumberValue") or val:IsA("IntValue") then
+                local n=val.Name:lower()
+                if n:find("stamina") or n:find("energy") or n:find("endurance") or n:find("sp") then
+                    val.Value=val.Value+20
+                end
+            end
+        end
+    end)) end
+end
+
+-- 10. Click TP
+local function fClickTP(v) S.ClickTP=v dC("CTP")
+    if v then aC("CTP",UIS.InputBegan:Connect(function(inp,gpe)
+        if gpe then return end
+        if inp.UserInputType==Enum.UserInputType.MouseButton2 then
+            local ur=Cam:ScreenPointToRay(inp.Position.X,inp.Position.Y)
+            local res=WS:Raycast(ur.Origin,ur.Direction*2000)
+            if res then local r=gR() if r then r.CFrame=CFrame.new(res.Position+Vector3.yAxis*4) end end
+        end
+    end)) end
+end
+
+-- ══════════════════════════════════════════════════
+-- PRISON LIFE FEATURES (11-18)
+-- ══════════════════════════════════════════════════
+
+-- 11. Anti Cuff
+local function fAntiCuff(v) S.AntiCuff=v dC("AC")
+    if v then aC("AC",RunService.Heartbeat:Connect(function()
+        local c=LP.Character if not c then return end
+        pcall(function()
+            for _,tool in ipairs(LP.Backpack:GetChildren()) do
+                if tool.Name:lower():find("cuff") then tool:Destroy() end
+            end
+            local h=gH()
+            if h then
+                for _,state in ipairs(h:GetPlayingAnimationTracks()) do
+                    if state.Animation and state.Animation.Name:lower():find("cuff") then
+                        state:Stop()
+                    end
+                end
+            end
+            -- Remove handcuff model if exists
+            local cuff=c:FindFirstChild("HandCuffs") or c:FindFirstChild("handcuffs") or c:FindFirstChild("Cuffs")
+            if cuff then cuff:Destroy() end
+        end)
+    end)) end
+end
+
+-- 12. Auto Escape
+local function fAutoEscape(v) S.AutoEscape=v dC("AE")
+    if v then aC("AE",RunService.Heartbeat:Connect(function()
+        pcall(function()
+            local c=LP.Character if not c then return end
+            -- Check for cuff state
+            local h=gH()
+            if h and h:GetState()==Enum.HumanoidStateType.Physics then
+                h:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+            -- Fire escape remotes
+            for _,rem in ipairs(game:GetDescendants()) do
+                if rem:IsA("RemoteEvent") then
+                    local n=rem.Name:lower()
+                    if n:find("escape") or n:find("uncuff") or n:find("breakfree") or n:find("resist") then
+                        pcall(function() rem:FireServer() end)
+                    end
+                end
+            end
+        end)
+    end)) end
+end
+
+-- 13. Kill Guards (NPC Damage)
+local function fKillGuards(v) S.KillGuards=v dC("KG")
+    if v then aC("KG",RunService.Heartbeat:Connect(function()
+        pcall(function()
+            for _,plr in ipairs(Players:GetPlayers()) do
+                if plr~=LP and plr.Character then
+                    local h=plr.Character:FindFirstChildOfClass("Humanoid")
+                    local team=plr.Team
+                    if h and team and (team.Name:lower():find("guard") or team.Name:lower():find("police") or team.Name:lower():find("warden")) then
+                        local r=gR() local r2=plr.Character:FindFirstChild("HumanoidRootPart")
+                        if r and r2 and (r.Position-r2.Position).Magnitude<15 then
+                            h.Health=0
+                        end
+                    end
+                end
+                -- NPC guards
+                for _,npc in ipairs(WS:GetDescendants()) do
+                    if npc:IsA("Humanoid") and npc.Parent and npc.Parent.Name:lower():find("guard") then
+                        if npc.Health>0 then npc.Health=0 end
+                    end
+                end
+            end
+        end)
+    end)) end
+end
+
+-- 14. TP Freedom (teleport to common freedom spots)
+local function fTPFreedom()
+    pcall(function()
+        local r=gR() if not r then return end
+        local spots={"Freedom","Escape","Outside","Yard","Gate","Exit","Spawn","Lobby"}
+        for _,inst in ipairs(WS:GetDescendants()) do
+            for _,name in ipairs(spots) do
+                if inst.Name:lower():find(name:lower()) and (inst:IsA("BasePart") or inst:IsA("Model")) then
+                    local cf=inst:IsA("Model") and inst:GetPivot() or inst.CFrame
+                    r.CFrame=cf+Vector3.yAxis*5 return
+                end
+            end
+        end
+        -- Fallback: teleport far from spawn
+        r.CFrame=CFrame.new(r.Position+Vector3.new(500,100,500))
+    end)
+end
+
+-- 15. Invisible to Guards
+local function fInvisGuards(v) S.InvisGuards=v dC("IG")
+    if v then aC("IG",RunService.Heartbeat:Connect(function()
+        pcall(function()
+            local c=LP.Character if not c then return end
+            for _,p in ipairs(c:GetDescendants()) do
+                if p:IsA("BasePart") then p.Transparency=0.95 end
+                if p:IsA("Decal") then p.Transparency=0.95 end
+            end
+        end)
+    end)) else
+        pcall(function()
+            local c=LP.Character if not c then return end
+            for _,p in ipairs(c:GetDescendants()) do
+                if p:IsA("BasePart") and p.Name~="HumanoidRootPart" then p.Transparency=0 end
+                if p:IsA("Decal") then p.Transparency=0 end
+            end
+        end)
+    end
+end
+
+-- 16. Auto Keycard Pickup
+local function fAutoKeycard(v) S.AutoKeycard=v dC("AKC")
+    if v then aC("AKC",RunService.Heartbeat:Connect(function()
+        pcall(function()
+            local r=gR() if not r then return end
+            for _,inst in ipairs(WS:GetDescendants()) do
+                local n=inst.Name:lower()
+                if (n:find("keycard") or n:find("key") or n:find("card") or n:find("access"))
+                    and (inst:IsA("BasePart") or inst:IsA("Tool")) then
+                    if inst:IsA("BasePart") and (inst.Position-r.Position).Magnitude<30 then
+                        firetouchinterest(r,inst,0) task.wait(0.05) firetouchinterest(r,inst,1)
+                    end
+                    if inst:IsA("Tool") and inst.Parent==WS then
+                        inst.Parent=LP.Backpack
+                    end
+                end
+            end
+        end)
+    end)) end
+end
+
+-- 17. Jail Break (remove cell doors/walls)
+local function fJailBreak(v) S.JailBreak=v dC("JB")
+    if v then aC("JB",RunService.Heartbeat:Connect(function()
+        pcall(function()
+            for _,inst in ipairs(WS:GetDescendants()) do
+                local n=inst.Name:lower()
+                if (n:find("cell") or n:find("jail") or n:find("prison") or n:find("bar") or n:find("gate"))
+                    and inst:IsA("BasePart") then
+                    if inst.CanCollide then inst.CanCollide=false inst.Transparency=0.7 end
+                end
+            end
+        end)
+    end)) else
+        pcall(function()
+            for _,inst in ipairs(WS:GetDescendants()) do
+                local n=inst.Name:lower()
+                if (n:find("cell") or n:find("jail") or n:find("prison") or n:find("bar") or n:find("gate"))
+                    and inst:IsA("BasePart") then
+                    inst.CanCollide=true inst.Transparency=0
+                end
+            end
+        end)
+    end
+end
+
+-- 18. Team Switch (force team)
+local function fTeamSwitch()
+    pcall(function()
+        for _,team in ipairs(game:GetService("Teams"):GetChildren()) do
+            if team.Name:lower():find("criminal") or team.Name:lower():find("prisoner")
+                or team.Name:lower():find("inmate") or team.Name:lower():find("escapee") then
+                LP.Team=team
+                local r=gR() if r then
+                    -- Respawn on new team
+                    local h=gH() if h then h.Health=0 end
+                end
+                return
+            end
+        end
+        -- Fallback: switch to first non-guard team
+        for _,team in ipairs(game:GetService("Teams"):GetChildren()) do
+            if not team.Name:lower():find("guard") and not team.Name:lower():find("police") then
+                LP.Team=team return
+            end
+        end
+    end)
+end
+
+-- ══════════════════════════════════════════════════
+-- URBAN WARFARE FEATURES (19-26)
+-- ══════════════════════════════════════════════════
+
+-- 19. Aimbot
+local function fAimbot(v) S.Aimbot=v dC("AIM")
+    if v then aC("AIM",RunService.RenderStepped:Connect(function()
+        pcall(function()
+            local closest,closestDist=nil,S.AimFOV
+            local myR=gR() if not myR then return end
+            for _,p in ipairs(Players:GetPlayers()) do
+                if p~=LP and p.Character then
+                    if S.TeamCheck and p.Team==LP.Team then continue end
+                    local head=p.Character:FindFirstChild("Head")
+                    if head then
+                        local screenPos=Cam:WorldToScreenPoint(head.Position)
+                        local dist=(Vector2.new(screenPos.X,screenPos.Y)-Vector2.new(VP.X/2,VP.Y/2)).Magnitude
+                        if dist<closestDist then
+                            closestDist=dist closest=head
+                        end
+                    end
+                end
+            end
+            if closest then
+                Cam.CFrame=Cam.CFrame:Lerp(CFrame.lookAt(Cam.CFrame.Position,closest.Position),1-S.AimSmooth)
+            end
+        end)
+    end)) end
+end
+
+-- 20. ESP Players
+local espHL={}
+local function fESPPlayers(v) S.ESPPlayers=v
+    for _,h in ipairs(espHL) do pcall(function() h:Destroy() end) end table.clear(espHL)
+    if not v then return end
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=LP and p.Character then
+            local hl=Instance.new("Highlight")
+            hl.FillColor=C.Blue hl.OutlineColor=C.W
+            hl.FillTransparency=0.5 hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+            hl.Parent=p.Character table.insert(espHL,hl)
+        end
+    end
+    aC("ESP_NEW",Players.PlayerAdded:Connect(function(p)
+        p.CharacterAdded:Connect(function(c) if S.ESPPlayers then
+            task.wait(0.2)
+            local hl=Instance.new("Highlight")
+            hl.FillColor=C.Blue hl.OutlineColor=C.W
+            hl.FillTransparency=0.5 hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+            hl.Parent=c table.insert(espHL,hl)
+        end end)
+    end))
+end
+
+-- 21. Wallhack
+local wkParts={}
+local function fWallhack(v) S.Wallhack=v
+    for inst,t in pairs(wkParts) do pcall(function() inst.Transparency=t end) end table.clear(wkParts)
+    if not v then return end
+    for _,inst in ipairs(WS:GetDescendants()) do
+        if inst:IsA("BasePart") and not inst:IsDescendantOf(LP.Character or Instance.new("Folder")) then
+            if inst.Transparency<0.7 then
+                wkParts[inst]=inst.Transparency
+                inst.Transparency=0.7
+            end
+        end
+    end
+end
+
+-- 22. No Recoil
+local function fNoRecoil(v) S.NoRecoil=v dC("NR")
+    if v then aC("NR",RunService.RenderStepped:Connect(function()
+        pcall(function()
+            local c=LP.Character if not c then return end
+            for _,tool in ipairs(c:GetChildren()) do
+                if tool:IsA("Tool") then
+                    for _,val in ipairs(tool:GetDescendants()) do
+                        if val:IsA("NumberValue") or val:IsA("IntValue") then
+                            local n=val.Name:lower()
+                            if n:find("recoil") or n:find("kick") or n:find("spread") then
+                                val.Value=0
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end)) end
+end
+
+-- 23. Rapid Fire
+local function fRapidFire(v) S.RapidFire=v dC("RF")
+    if v then aC("RF",UIS.InputBegan:Connect(function(inp,gpe)
+        if gpe then return end
+        if inp.UserInputType==Enum.UserInputType.MouseButton1 then
+            task.spawn(function()
+                while S.RapidFire and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                    pcall(function()
+                        local c=LP.Character if not c then return end
+                        for _,tool in ipairs(c:GetChildren()) do
+                            if tool:IsA("Tool") then
+                                local rem=tool:FindFirstChildWhichIsA("RemoteEvent")
+                                if rem then rem:FireServer() end
+                            end
+                        end
+                    end)
+                    task.wait(0.05)
+                end
+            end)
+        end
+    end)) end
+end
+
+-- 24. Silent Aim (redirects bullets to nearest enemy)
+local function fSilentAim(v) S.SilentAim=v dC("SA")
+    if v then aC("SA",RunService.RenderStepped:Connect(function()
+        pcall(function()
+            local closest=nil local closestDist=S.AimFOV
+            local myR=gR() if not myR then return end
+            for _,p in ipairs(Players:GetPlayers()) do
+                if p~=LP and p.Character then
+                    if S.TeamCheck and p.Team==LP.Team then continue end
+                    local head=p.Character:FindFirstChild("Head")
+                    if head then
+                        local screenPos=Cam:WorldToScreenPoint(head.Position)
+                        local dist=(Vector2.new(screenPos.X,screenPos.Y)-Vector2.new(VP.X/2,VP.Y/2)).Magnitude
+                        if dist<closestDist then closestDist=dist closest=head end
+                    end
+                end
+            end
+            if closest then
+                -- Override mouse target for gun scripts
+                local mouse=LP:GetMouse()
+                pcall(function() mouse.Hit=CFrame.new(closest.Position) end)
+            end
+        end)
+    end)) end
+end
+
+-- 25. Triggerbot (auto-shoot when crosshair on enemy)
+local function fTriggerbot(v) S.Triggerbot=v dC("TB")
+    if v then aC("TB",RunService.RenderStepped:Connect(function()
+        pcall(function()
+            local ray=Cam:ScreenPointToRay(VP.X/2,VP.Y/2)
+            local res=WS:Raycast(ray.Origin,ray.Direction*1000)
+            if res and res.Instance then
+                for _,p in ipairs(Players:GetPlayers()) do
+                    if p~=LP and p.Character and res.Instance:IsDescendantOf(p.Character) then
+                        if S.TeamCheck and p.Team==LP.Team then continue end
+                        mouse1click()
+                        break
+                    end
+                end
+            end
+        end)
+    end)) end
+end
+
+-- 26. Team Check (used by aimbot/silent aim/triggerbot)
+local function fTeamCheck(v) S.TeamCheck=v end
+
+-- ══════════════════════════════════════════════════
+-- EVADE FEATURES (27-32)
+-- ══════════════════════════════════════════════════
+
+-- 27. Auto Run Speed
+local function fAutoRun(v) S.AutoRun=v dC("ARun")
+    if v then aC("ARun",RunService.Heartbeat:Connect(function()
+        local h=gH() if h then h.WalkSpeed=S.Speed+30 end
+    end)) else
+        local h=gH() if h then h.WalkSpeed=S.Speed end
+    end
+end
+
+-- 28. Noclip Doors
+local function fNoclipDoors(v) S.NoclipDoors=v dC("ND")
+    if v then aC("ND",RunService.Heartbeat:Connect(function()
+        pcall(function()
+            for _,inst in ipairs(WS:GetDescendants()) do
+                local n=inst.Name:lower()
+                if (n:find("door") or n:find("gate") or n:find("barrier") or n:find("wall"))
+                    and inst:IsA("BasePart") and inst.CanCollide then
+                    inst.CanCollide=false
+                end
+            end
+        end)
+    end)) else
+        pcall(function()
+            for _,inst in ipairs(WS:GetDescendants()) do
+                local n=inst.Name:lower()
+                if (n:find("door") or n:find("gate") or n:find("barrier"))
+                    and inst:IsA("BasePart") then
+                    inst.CanCollide=true
+                end
+            end
+        end)
+    end
+end
+
+-- 29. Auto Dodge (teleport sideways when projectile detected)
+local function fAutoDodge(v) S.AutoDodge=v dC("AD")
+    if v then aC("AD",RunService.Heartbeat:Connect(function()
+        pcall(function()
+            local r=gR() if not r then return end
+            for _,inst in ipairs(WS:GetDescendants()) do
+                if inst:IsA("BasePart") and not inst:IsDescendantOf(LP.Character or Instance.new("Folder")) then
+                    local n=inst.Name:lower()
+                    if n:find("bullet") or n:find("projectile") or n:find("rocket")
+                        or n:find("grenade") or n:find("bomb") then
+                        local dist=(inst.Position-r.Position).Magnitude
+                        if dist<15 then
+                            r.CFrame=r.CFrame*CFrame.new(math.random(-10,10),0,math.random(-10,10))
+                        end
+                    end
+                end
+            end
+        end)
+    end)) end
+end
+
+-- 30. Speed Boost (Evade specific)
+local function fSpeedBoost(v) S.SpeedBoost=v dC("SB")
+    if v then aC("SB",RunService.Heartbeat:Connect(function()
+        pcall(function()
+            local h=gH() if h then h.WalkSpeed=S.Speed+50 end
+            -- Also try to find speed values in game
+            local c=LP.Character if not c then return end
+            for _,val in ipairs(c:GetDescendants()) do
+                if val:IsA("NumberValue") or val:IsA("IntValue") then
+                    local n=val.Name:lower()
+                    if n:find("speed") or n:find("walkspeed") then
+                        val.Value=val.Value+10
+                    end
+                end
+            end
+        end)
+    end)) else
+        local h=gH() if h then h.WalkSpeed=S.Speed end
+    end
+end
+
+-- 31. TP Checkpoint
+local function fTPCheckpoint()
+    pcall(function()
+        local r=gR() if not r then return end
+        local checkpoints={}
+        for _,inst in ipairs(WS:GetDescendants()) do
+            local n=inst.Name:lower()
+            if (n:find("checkpoint") or n:find("stage") or n:find("round") or n:find("zone"))
+                and (inst:IsA("BasePart") or inst:IsA("Model")) then
+                table.insert(checkpoints,inst)
+            end
+        end
+        if #checkpoints>0 then
+            local target=checkpoints[math.random(#checkpoints)]
+            local cf=target:IsA("Model") and target:GetPivot() or target.CFrame
+            r.CFrame=cf+Vector3.yAxis*5
+        end
+    end)
+end
+
+-- 32. Auto Win
+local function fAutoWin(v) S.AutoWin=v dC("AW")
+    if v then aC("AW",RunService.Heartbeat:Connect(function()
+        pcall(function()
+            -- Fire any win/score/complete remotes
+            for _,rem in ipairs(game:GetDescendants()) do
+                if rem:IsA("RemoteEvent") then
+                    local n=rem.Name:lower()
+                    if n:find("win") or n:find("complete") or n:find("finish")
+                        or n:find("score") or n:find("claim") or n:find("reward") then
+                        pcall(function() rem:FireServer() end)
+                    end
+                end
+            end
+        end)
+    end)) end
+end
+
+-- ══════════════════════════════════════════════════
+-- VISUAL FEATURES (33-38)
+-- ══════════════════════════════════════════════════
+
+-- 33. ESP Items
+local iHL={}
+local function fESPItems(v) S.ESPItems=v
+    for _,h in ipairs(iHL) do pcall(function() h:Destroy() end) end table.clear(iHL)
+    if not v then return end
+    local kw={"item","drop","chest","coin","gem","loot","pickup","collect","reward","ore","fruit","weapon"}
+    for _,inst in ipairs(WS:GetDescendants()) do
+        local n=inst.Name:lower() local hit=false
+        for _,k in ipairs(kw) do if n:find(k) then hit=true break end end
+        if hit and (inst:IsA("BasePart") or inst:IsA("Model") or inst:IsA("Tool")) then
+            local hl=Instance.new("Highlight")
+            hl.FillColor=C.Green hl.OutlineColor=C.Green
+            hl.FillTransparency=0.4 hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+            hl.Parent=inst table.insert(iHL,hl)
+        end
+    end
+end
+
+-- 34. Fullbright
+local sL={B=Lighting.Brightness,T=Lighting.ClockTime,A=Lighting.Ambient,O=Lighting.OutdoorAmbient}
+local function fFullbright(v) S.Fullbright=v
+    if v then Lighting.Brightness=3 Lighting.ClockTime=14
+        Lighting.Ambient=Color3.fromRGB(178,178,178) Lighting.OutdoorAmbient=Color3.fromRGB(178,178,178)
+    else Lighting.Brightness=sL.B Lighting.ClockTime=sL.T Lighting.Ambient=sL.A Lighting.OutdoorAmbient=sL.O end
+end
+
+-- 35. No Fog
+local sF={S=Lighting.FogStart,E=Lighting.FogEnd}
+local function fNoFog(v) S.NoFog=v
+    if v then Lighting.FogStart=1e9 Lighting.FogEnd=1e9
+    else Lighting.FogStart=sF.S Lighting.FogEnd=sF.E end
+end
+
+-- 36. Crosshair
+local cGui
+local function fCrosshair(v) S.Crosshair=v
+    if cGui then cGui:Destroy() cGui=nil end
+    if v then
+        cGui=Instance.new("ScreenGui") cGui.Name="_SF20Cross"
+        cGui.ResetOnSpawn=false cGui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling cGui.Parent=PG
+        local function bar(x,y,w,h2)
+            local f=Instance.new("Frame") f.AnchorPoint=Vector2.new(0.5,0.5)
+            f.BackgroundColor3=C.Green f.BorderSizePixel=0
+            f.Position=UDim2.new(0.5,x,0.5,y) f.Size=UDim2.fromOffset(w,h2) f.Parent=cGui
+            Instance.new("UICorner",f).CornerRadius=UDim.new(1,0)
+        end
+        bar(0,0,20,2) bar(0,0,2,20)
+    end
+end
+
+-- 37. Show Names
+local nameBills={}
+local function fShowNames(v) S.ShowNames=v
+    for _,b in ipairs(nameBills) do pcall(function() b:Destroy() end) end table.clear(nameBills)
+    if not v then return end
+    for _,plr in ipairs(Players:GetPlayers()) do
+        if plr~=LP and plr.Character then
+            local head=plr.Character:FindFirstChild("Head")
+            if head then
+                local bb=Instance.new("BillboardGui") bb.Size=UDim2.fromOffset(120,28)
+                bb.StudsOffset=Vector3.new(0,2.5,0) bb.AlwaysOnTop=true bb.Parent=head
+                local lbl=Instance.new("TextLabel",bb) lbl.BackgroundTransparency=1
+                lbl.Size=UDim2.fromScale(1,1) lbl.Text=plr.Name
+                lbl.Font=Enum.Font.GothamBold lbl.TextColor3=C.Blue
+                lbl.TextStrokeTransparency=0 lbl.TextSize=13
+                table.insert(nameBills,bb)
+            end
+        end
+    end
+end
+
+-- 38. Big Head
+local function fBigHead(v) S.BigHead=v dC("BH")
+    if v then aC("BH",RunService.Heartbeat:Connect(function()
+        local c=LP.Character if not c then return end
+        local hd=c:FindFirstChild("Head") if hd then hd.Size=Vector3.new(3.5,3.5,3.5) end
+    end))
+    else local c=LP.Character if c then local hd=c:FindFirstChild("Head") if hd then hd.Size=Vector3.new(2,1,1) end end end
+end
+
+-- ══════════════════════════════════════════════════
+-- RESPAWN HANDLER
+-- ══════════════════════════════════════════════════
+LP.CharacterAdded:Connect(function() task.wait(0.5)
+    if S.God then fGod(true) end
+    if S.Fly then fFly(true) end
+    if S.Noclip then fNoclip(true) end
+    if S.InfJump then fInfJump(true) end
+    if S.AntiRag then fAntiRag(true) end
+    if S.AntiCuff then fAntiCuff(true) end
+    if S.AutoEscape then fAutoEscape(true) end
+    local h=gH()
+    if h then h.WalkSpeed=S.Speed h.UseJumpPower=true h.JumpPower=S.Jump end
+end)
+
+-- ══════════════════════════════════════════════════
+-- GUI CONSTRUCTION
+-- ══════════════════════════════════════════════════
+local function uC(p,r2) local c=Instance.new("UICorner") c.CornerRadius=UDim.new(0,r2 or 8) c.Parent=p return c end
+local function uSt(p,col,th) local s=Instance.new("UIStroke") s.Color=col or C.Stroke s.Thickness=th or 1 s.Parent=p return s end
+local function uPad(p,t,b,l,r2) local u=Instance.new("UIPadding") u.PaddingTop=UDim.new(0,t) u.PaddingBottom=UDim.new(0,b) u.PaddingLeft=UDim.new(0,l) u.PaddingRight=UDim.new(0,r2 or l) u.Parent=p end
+local function uGr(p,c1,c2,rot) local g=Instance.new("UIGradient") g.Color=ColorSequence.new(c1,c2) g.Rotation=rot or 90 g.Parent=p return g end
+local function uLbl(p,txt,sz,col,xa,fnt)
+    local l=Instance.new("TextLabel") l.BackgroundTransparency=1
+    l.Size=UDim2.new(1,0,0,sz+4) l.Font=fnt or Enum.Font.GothamMedium
+    l.Text=txt l.TextSize=sz l.TextColor3=col or C.Text
+    l.TextXAlignment=xa or Enum.TextXAlignment.Left l.TextScaled=false l.Parent=p return l
+end
+local function uPulse(s2)
+    task.spawn(function()
+        while s2 and s2.Parent do
+            TS:Create(s2,TweenInfo.new(1.6,Enum.EasingStyle.Sine),{Transparency=0.55}):Play() task.wait(1.6)
+            TS:Create(s2,TweenInfo.new(1.6,Enum.EasingStyle.Sine),{Transparency=0}):Play() task.wait(1.6)
+        end
+    end)
+end
+
+-- ScreenGui
+local SG=Instance.new("ScreenGui")
+SG.Name="SkyfallHubV20" SG.ResetOnSpawn=false
+SG.ZIndexBehavior=Enum.ZIndexBehavior.Sibling SG.IgnoreGuiInset=true SG.Parent=PG
+_G.SF20=SG
+
+-- Floating button
+local FBtn=Instance.new("TextButton")
+FBtn.Size=UDim2.fromOffset(44,44) FBtn.Position=UDim2.new(0,8,0.5,-22)
+FBtn.BackgroundColor3=C.Dim FBtn.AutoButtonColor=false FBtn.Text=""
+FBtn.ZIndex=30 FBtn.Visible=false FBtn.Parent=SG
+uC(FBtn,22) local fStk=uSt(FBtn,C.Blue,2) uPulse(fStk)
+local fLbl=Instance.new("TextLabel") fLbl.BackgroundTransparency=1
+fLbl.Size=UDim2.fromScale(1,1) fLbl.Font=Enum.Font.GothamBlack
+fLbl.Text="SF" fLbl.TextColor3=C.Blue fLbl.TextSize=14 fLbl.Parent=FBtn
+
+-- Main Panel
+local Main=Instance.new("Frame")
+Main.Name="Panel" Main.Size=UDim2.fromOffset(PW,PH)
+Main.Position=UDim2.new(0.5,-PW/2,0.5,-PH/2)
+Main.BackgroundColor3=C.Bg Main.BorderSizePixel=0 Main.ClipsDescendants=true Main.Parent=SG
+uC(Main,12) local mStk=uSt(Main,C.Blue,1.5) uPulse(mStk)
+
+-- Accent bar
+local AccBar=Instance.new("Frame")
+AccBar.Size=UDim2.new(1,0,0,2) AccBar.Position=UDim2.fromOffset(0,TBH)
+AccBar.BackgroundColor3=C.Blue AccBar.BorderSizePixel=0 AccBar.Parent=Main
+
+-- Top Bar
+local TB=Instance.new("Frame")
+TB.Size=UDim2.new(1,0,0,TBH) TB.BackgroundColor3=C.Panel TB.BorderSizePixel=0 TB.Parent=Main
+uC(TB,12)
+local tbFix=Instance.new("Frame") tbFix.Size=UDim2.new(1,0,0,12)
+tbFix.Position=UDim2.new(0,0,1,-12) tbFix.BackgroundColor3=C.Panel tbFix.BorderSizePixel=0 tbFix.Parent=TB
+
+-- Logo
+local LBox=Instance.new("Frame") LBox.BackgroundTransparency=1
+LBox.Size=UDim2.fromOffset(MOBILE and 34 or 42, MOBILE and 24 or 30)
+LBox.Position=UDim2.fromOffset(MOBILE and 8 or 12, math.floor((TBH-28)/2)) LBox.Parent=TB
+local LBg=Instance.new("Frame") LBg.Size=UDim2.fromScale(1,1) LBg.BackgroundColor3=C.Dim LBg.Parent=LBox
+uC(LBg,7)
+local LTxt=Instance.new("TextLabel") LTxt.BackgroundTransparency=1
+LTxt.Size=UDim2.fromScale(1,1) LTxt.Font=Enum.Font.GothamBlack
+LTxt.Text="SF" LTxt.TextColor3=C.Blue LTxt.TextSize=MOBILE and 13 or 16
+LTxt.TextXAlignment=Enum.TextXAlignment.Center LTxt.Parent=LBox
+
+-- Title
+local TBox=Instance.new("Frame") TBox.BackgroundTransparency=1
+TBox.Position=UDim2.fromOffset(MOBILE and 48 or 62, math.floor((TBH-30)/2))
+TBox.Size=UDim2.fromOffset(MOBILE and 120 or 200, 30) TBox.Parent=TB
+local TLbl=uLbl(TBox,"SKYFALL HUB",MOBILE and 11 or 14,C.Blue,Enum.TextXAlignment.Left,Enum.Font.GothamBlack)
+TLbl.Size=UDim2.new(1,0,0,MOBILE and 13 or 17)
+uLbl(TBox,"v20 Ultra · 42 Features",MOBILE and 8 or 9,C.Sub,Enum.TextXAlignment.Left)
+
+-- Window buttons
+local function wBtn(lbl,xOff,col)
+    local btn=Instance.new("TextButton")
+    btn.Size=UDim2.fromOffset(MOBILE and 22 or 26, MOBILE and 22 or 26)
+    btn.Position=UDim2.new(1,xOff,0.5,MOBILE and -11 or -13)
+    btn.BackgroundColor3=C.Card btn.AutoButtonColor=false
+    btn.Text=lbl btn.Font=Enum.Font.GothamBold
+    btn.TextColor3=col btn.TextSize=MOBILE and 10 or 12 btn.Parent=TB
+    uC(btn,6) uSt(btn,col,1.5) return btn
+end
+local BClose=wBtn("X",MOBILE and -30 or -34, C.Red)
+local BMin  =wBtn("-",MOBILE and -58 or -66, C.Yellow)
+
+-- Sidebar
+local Sidebar=Instance.new("Frame")
+Sidebar.Position=UDim2.fromOffset(0,TBH+2)
+Sidebar.Size=UDim2.new(0,SIDE,1,-(TBH+2))
+Sidebar.BackgroundColor3=C.Panel Sidebar.BorderSizePixel=0 Sidebar.Parent=Main
+uPad(Sidebar,6,6,4,4)
+local NavList=Instance.new("UIListLayout") NavList.Padding=UDim.new(0,3) NavList.Parent=Sidebar
+
+local Pages={} local NBtns={}
+local function selPage(name)
+    for k,pg in pairs(Pages) do pg.Visible=(k==name) end
+    for k,btn in pairs(NBtns) do
+        local on=(k==name)
+        TS:Create(btn,TweenInfo.new(0.15),{BackgroundColor3=on and C.Dim or C.Panel}):Play()
+        local st=btn:FindFirstChildOfClass("UIStroke")
+        if st then TS:Create(st,TweenInfo.new(0.15),{Color=on and C.Blue or C.Panel}):Play() end
+    end
+end
+
+local navDef={
+    {"Home","⌂"},{"Universal","⚡"},{"Prison","🔒"},
+    {"Warfare","⚔"},{"Evade","🏃"},{"Visuals","◉"},{"Settings","⚙"}
+}
+for i,nd in ipairs(navDef) do
+    local btn=Instance.new("TextButton") btn.Name=nd[1]
+    btn.Size=UDim2.new(1,0,0,MOBILE and 28 or 26) btn.LayoutOrder=i
+    btn.BackgroundColor3=C.Panel btn.AutoButtonColor=false
+    btn.Font=Enum.Font.GothamMedium btn.TextColor3=C.Text btn.TextSize=MOBILE and 8 or 11
+    btn.Text=nd[2].." "..nd[1] btn.TextXAlignment=Enum.TextXAlignment.Left btn.Parent=Sidebar
+    uC(btn,6) uSt(btn,C.Panel,1) uPad(btn,0,0,MOBILE and 4 or 6,3)
+    btn.MouseButton1Click:Connect(function() selPage(nd[1]) end)
+    NBtns[nd[1]]=btn
+end
+
+-- Content Area
+local Content=Instance.new("Frame")
+Content.Position=UDim2.new(0,SIDE,0,TBH+2)
+Content.Size=UDim2.new(1,-SIDE,1,-(TBH+2))
+Content.BackgroundTransparency=1 Content.ClipsDescendants=true Content.Parent=Main
+uPad(Content,PAD,PAD,PAD,PAD)
+
+local function newPage(name)
+    local pg=Instance.new("Frame") pg.Name=name
+    pg.Size=UDim2.fromScale(1,1) pg.BackgroundTransparency=1 pg.Visible=false
+    pg.Parent=Content Pages[name]=pg return pg
+end
+
+-- Card/Scroll
+local function mkCard(parent,title)
+    local sf=Instance.new("ScrollingFrame")
+    sf.Size=UDim2.fromScale(1,1) sf.BackgroundColor3=C.Card sf.BorderSizePixel=0
+    sf.ScrollBarThickness=MOBILE and 2 or 4 sf.ScrollBarImageColor3=C.Blue
+    sf.CanvasSize=UDim2.new(0,0,0,0) sf.AutomaticCanvasSize=Enum.AutomaticSize.Y
+    sf.ScrollingDirection=Enum.ScrollingDirection.Y sf.ElasticBehavior=Enum.ElasticBehavior.Always
+    sf.Parent=parent
+    uC(sf,10) uSt(sf,C.Stroke,1) uPad(sf,PAD,PAD,PAD,PAD)
+    uLbl(sf,title,FS2,C.Blue,Enum.TextXAlignment.Left,Enum.Font.GothamBold).LayoutOrder=0
+    local sep=Instance.new("Frame") sep.Size=UDim2.new(1,0,0,1) sep.BackgroundColor3=C.Stroke
+    sep.BorderSizePixel=0 sep.LayoutOrder=1 sep.Parent=sf
+    local ll=Instance.new("UIListLayout") ll.Padding=UDim.new(0,MOBILE and 5 or 6)
+    ll.SortOrder=Enum.SortOrder.LayoutOrder ll.Parent=sf
+    local sp=Instance.new("Frame") sp.BackgroundTransparency=1 sp.Size=UDim2.new(1,0,0,2) sp.LayoutOrder=2 sp.Parent=sf
+    return sf
+end
+
+-- Toggle Builder
+local function mkToggle(parent,label,order,init,cb)
+    local row=Instance.new("Frame") row.BackgroundTransparency=1
+    row.Size=UDim2.new(1,0,0,ROW) row.LayoutOrder=order row.Parent=parent
+    local lbl=uLbl(row,label,FS,C.Text) lbl.Size=UDim2.new(1,-48,1,0) lbl.TextWrapped=true
+    local tog=Instance.new("TextButton")
+    tog.Size=UDim2.fromOffset(36,18) tog.Position=UDim2.new(1,-36,0.5,-9)
+    tog.BackgroundColor3=init and C.Blue or C.Off tog.AutoButtonColor=false tog.Text="" tog.Parent=row
+    uC(tog,9)
+    local knob=Instance.new("Frame") knob.Size=UDim2.fromOffset(12,12)
+    knob.Position=init and UDim2.new(1,-14,0.5,-6) or UDim2.new(0,2,0.5,-6)
+    knob.BackgroundColor3=C.W knob.Parent=tog uC(knob,6)
+    local on=init
+    tog.MouseButton1Click:Connect(function()
+        on=not on
+        TS:Create(tog,TweenInfo.new(0.12),{BackgroundColor3=on and C.Blue or C.Off}):Play()
+        TS:Create(knob,TweenInfo.new(0.12),{Position=on and UDim2.new(1,-14,0.5,-6) or UDim2.new(0,2,0.5,-6)}):Play()
+        cb(on)
+    end)
+end
+
+-- Slider Builder
+local function mkSlider(parent,label,order,mn,mx,init,cb)
+    local row=Instance.new("Frame") row.BackgroundTransparency=1
+    row.Size=UDim2.new(1,0,0,ROW) row.LayoutOrder=order row.Parent=parent
+    local lbl=uLbl(row,label,FS,C.Text) lbl.Size=UDim2.new(0,70,1,0)
+    local track=Instance.new("Frame")
+    track.Position=UDim2.new(0,76,0.5,-3) track.Size=UDim2.new(1,-116,0,5)
+    track.BackgroundColor3=C.Off track.Parent=row uC(track,3)
+    local frac=(init-mn)/math.max(mx-mn,1)
+    local fill=Instance.new("Frame") fill.Size=UDim2.new(frac,0,1,0) fill.BackgroundColor3=C.Blue fill.Parent=track uC(fill,3)
+    local knob=Instance.new("Frame") knob.Size=UDim2.fromOffset(12,12)
+    knob.AnchorPoint=Vector2.new(0.5,0.5) knob.Position=UDim2.new(frac,0,0.5,0)
+    knob.BackgroundColor3=C.W knob.Parent=track uC(knob,6)
+    local vl=uLbl(row,tostring(math.floor(init)),FS,C.Blue)
+    vl.Size=UDim2.fromOffset(36,ROW) vl.Position=UDim2.new(1,-36,0,0)
+    vl.TextXAlignment=Enum.TextXAlignment.Right vl.Font=Enum.Font.GothamBold
+    local drag=false
+    local function upd(inp)
+        local rel=math.clamp((inp.Position.X-track.AbsolutePosition.X)/math.max(track.AbsoluteSize.X,1),0,1)
+        local val=mn+(mx-mn)*rel
+        fill.Size=UDim2.new(rel,0,1,0) knob.Position=UDim2.new(rel,0,0.5,0)
+        vl.Text=tostring(math.floor(val)) cb(val)
+    end
+    track.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag=true upd(i) end
+    end)
+    UIS.InputChanged:Connect(function(i)
+        if drag and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then upd(i) end
+    end)
+    UIS.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag=false end
+    end)
+end
+
+local function mkBtn(parent,txt,cb,col)
+    local btn=Instance.new("TextButton")
+    btn.BackgroundColor3=col or C.Light btn.AutoButtonColor=false
+    btn.Text=txt btn.Font=Enum.Font.GothamMedium btn.TextColor3=C.Text btn.TextSize=FS btn.Parent=parent
+    uC(btn,7) uSt(btn,C.Stroke,1) btn.MouseButton1Click:Connect(cb) return btn
+end
+
+local function mkDiv(parent,order)
+    local f=Instance.new("Frame") f.BackgroundColor3=C.Stroke f.BorderSizePixel=0
+    f.Size=UDim2.new(1,0,0,1) f.LayoutOrder=order f.Parent=parent
+end
+
+-- ══════════════════════════════════════════════════
+-- PAGES
+-- ══════════════════════════════════════════════════
+
+-- HOME
+local HomePg=newPage("Home")
+local Banner=Instance.new("Frame")
+Banner.Size=UDim2.new(1,0,0,MOBILE and 70 or 85) Banner.BackgroundColor3=C.Card Banner.Parent=HomePg
+uC(Banner,10) uSt(Banner,C.Stroke,1) uPad(Banner,10,10,14,12)
+local bList=Instance.new("UIListLayout") bList.Padding=UDim.new(0,2) bList.Parent=Banner
+uLbl(Banner,"Welcome,",FS,C.Sub).LayoutOrder=0
+local nmLbl=uLbl(Banner,LP.DisplayName,MOBILE and 15 or 19,C.Blue,nil,Enum.Font.GothamBlack) nmLbl.LayoutOrder=1
+uLbl(Banner,"SkyfallHub v20 Ultra · 42 Features",MOBILE and 8 or 9,C.Sub).LayoutOrder=2
+
+-- PLAYER (Universal)
+local PlayerPg=newPage("Universal")
+local PC=mkCard(PlayerPg,"⚡ Universal Exploits (10)")
+mkToggle(PC,"God Mode",3,S.God,fGod)
+mkToggle(PC,"Noclip",4,S.Noclip,fNoclip)
+mkToggle(PC,"Infinite Jump",5,S.InfJump,fInfJump)
+mkToggle(PC,"Fly v2 (Hybrid)",6,S.Fly,fFly)
+mkToggle(PC,"Speed Hack (100 WS)",7,S.SpeedHack,fSpeedHack)
+mkToggle(PC,"Anti AFK",8,S.AntiAFK,fAntiAFK)
+mkToggle(PC,"Low Gravity",9,S.LowGrav,fLowGrav)
+mkToggle(PC,"Anti Ragdoll",10,S.AntiRag,fAntiRag)
+mkToggle(PC,"Infinite Stamina",11,S.InfStam,fInfStam)
+mkToggle(PC,"Click TP (Right Click)",12,S.ClickTP,fClickTP)
+mkDiv(PC,13)
+mkSlider(PC,"WalkSpeed",14,16,300,S.Speed,function(v) S.Speed=v local h=gH() if h then h.WalkSpeed=v end end)
+mkSlider(PC,"JumpPower",15,50,500,S.Jump,function(v) S.Jump=v local h=gH() if h then h.UseJumpPower=true h.JumpPower=v end end)
+mkSlider(PC,"Fly Speed",16,10,300,S.FlySpd,function(v) S.FlySpd=v end)
+
+-- PRISON LIFE
+local PrisonPg=newPage("Prison")
+local PrC=mkCard(PrisonPg,"🔒 Prison Life (8)")
+mkToggle(PrC,"Anti Cuff",3,S.AntiCuff,fAntiCuff)
+mkToggle(PrC,"Auto Escape",4,S.AutoEscape,fAutoEscape)
+mkToggle(PrC,"Kill Guards",5,S.KillGuards,fKillGuards)
+mkToggle(PrC,"Invisible to Guards",6,S.InvisGuards,fInvisGuards)
+mkToggle(PrC,"Auto Keycard Pickup",7,S.AutoKeycard,fAutoKeycard)
+mkToggle(PrC,"Jail Break (Remove Cells)",8,S.JailBreak,fJailBreak)
+mkDiv(PrC,9)
+mkBtn(PrC,"TP to Freedom",function() fTPFreedom() end,C.Dim).LayoutOrder=10
+mkBtn(PrC,"Switch to Prisoner Team",function() fTeamSwitch() end,C.Dim).LayoutOrder=11
+
+-- URBAN WARFARE
+local WarPg=newPage("Warfare")
+local WC=mkCard(WarPg,"⚔ Urban Warfare (8)")
+mkToggle(WC,"Aimbot",3,S.Aimbot,fAimbot)
+mkToggle(WC,"ESP Players",4,S.ESPPlayers,fESPPlayers)
+mkToggle(WC,"Wallhack",5,S.Wallhack,fWallhack)
+mkToggle(WC,"No Recoil",6,S.NoRecoil,fNoRecoil)
+mkToggle(WC,"Rapid Fire",7,S.RapidFire,fRapidFire)
+mkToggle(WC,"Silent Aim",8,S.SilentAim,fSilentAim)
+mkToggle(WC,"Triggerbot",9,S.Triggerbot,fTriggerbot)
+mkToggle(WC,"Team Check (for Aim/Silent)",10,S.TeamCheck,fTeamCheck)
+mkDiv(WC,11)
+mkSlider(WC,"Aim FOV",12,30,300,S.AimFOV,function(v) S.AimFOV=v end)
+mkSlider(WC,"Aim Smooth",13,1,100,math.floor(S.AimSmooth*100),function(v) S.AimSmooth=v/100 end)
+
+-- EVADE
+local EvadePg=newPage("Evade")
+local EC=mkCard(EvadePg,"🏃 Evade (6)")
+mkToggle(EC,"Auto Run Speed",3,S.AutoRun,fAutoRun)
+mkToggle(EC,"Noclip Doors",4,S.NoclipDoors,fNoclipDoors)
+mkToggle(EC,"Auto Dodge",5,S.AutoDodge,fAutoDodge)
+mkToggle(EC,"Speed Boost",6,S.SpeedBoost,fSpeedBoost)
+mkToggle(EC,"Auto Win",7,S.AutoWin,fAutoWin)
+mkDiv(EC,8)
+mkBtn(EC,"TP to Random Checkpoint",function() fTPCheckpoint() end,C.Dim).LayoutOrder=9
+
+-- VISUALS
+local VisPg=newPage("Visuals")
+local VC=mkCard(VisPg,"◉ Visuals (6)")
+mkToggle(VC,"ESP Items",3,S.ESPItems,fESPItems)
+mkToggle(VC,"Fullbright",4,S.Fullbright,fFullbright)
+mkToggle(VC,"No Fog",5,S.NoFog,fNoFog)
+mkToggle(VC,"Crosshair",6,S.Crosshair,fCrosshair)
+mkToggle(VC,"Show Names",7,S.ShowNames,fShowNames)
+mkToggle(VC,"Big Head",8,S.BigHead,fBigHead)
+
+-- SETTINGS
+local SetPg=newPage("Settings")
+local SC=mkCard(SetPg,"⚙ Settings")
+mkBtn(SC,"Reset Character",function() local h=gH() if h then h.Health=0 end end,C.Card).LayoutOrder=3
+mkBtn(SC,"Rejoin Server",function() game:GetService("TeleportService"):Teleport(game.PlaceId,LP) end,C.Card).LayoutOrder=4
+mkBtn(SC,"Copy Place ID",function()
+    pcall(function()
+        if setclipboard then setclipboard(tostring(game.PlaceId))
+        elseif toclipboard then toclipboard(tostring(game.PlaceId)) end
+    end)
+end,C.Card).LayoutOrder=5
+local infoLbl=uLbl(SC,"Toggle Key: RightShift",FS-1,C.Sub) infoLbl.LayoutOrder=6
+uLbl(SC,"Total Features: 42",FS-1,C.Sub).LayoutOrder=7
+uLbl(SC,"Version: v20 Ultra Mode",FS-1,C.Sub).LayoutOrder=8
+uLbl(SC,"Compatible: Delta, Fluxus, Hydrogen, Wave",FS-1,C.Sub).LayoutOrder=9
+
+-- ══════════════════════════════════════════════════
+-- STATUS BAR
+-- ══════════════════════════════════════════════════
+local StatusBar=Instance.new("Frame")
+StatusBar.Size=UDim2.new(1,0,0,22) StatusBar.Position=UDim2.new(0,0,1,-22)
+StatusBar.BackgroundColor3=C.Panel StatusBar.BorderSizePixel=0 StatusBar.Parent=Main
+uC(StatusBar,12)
+local sbFix=Instance.new("Frame") sbFix.Size=UDim2.new(1,0,0,10) sbFix.BackgroundColor3=C.Panel sbFix.BorderSizePixel=0 sbFix.Parent=StatusBar
+local dot=Instance.new("Frame") dot.Size=UDim2.fromOffset(6,6) dot.Position=UDim2.fromOffset(10,8)
+dot.BackgroundColor3=C.Green dot.Parent=StatusBar uC(dot,3)
+local conL=uLbl(StatusBar,"Connected",MOBILE and 9 or 10,C.Green)
+conL.Position=UDim2.fromOffset(20,4) conL.Size=UDim2.fromOffset(80,14)
+local fpsL=uLbl(StatusBar,"FPS --",MOBILE and 9 or 10,C.Sub,Enum.TextXAlignment.Right)
+fpsL.Position=UDim2.new(1,-130,0,4) fpsL.Size=UDim2.fromOffset(60,14)
+local pingL=uLbl(StatusBar,"Ping --",MOBILE and 9 or 10,C.Sub,Enum.TextXAlignment.Right)
+pingL.Position=UDim2.new(1,-62,0,4) pingL.Size=UDim2.fromOffset(52,14)
+
+local frm=0 local lt=os.clock()
+RunService.RenderStepped:Connect(function()
+    frm+=1 local now=os.clock()
+    if now-lt>=1 then
+        fpsL.Text="FPS "..frm frm=0 lt=now
+        local ok,p=pcall(function() return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() end)
+        if ok and p then pingL.Text="Ping "..math.floor(p).."ms" end
+    end
+end)
+
+-- ══════════════════════════════════════════════════
+-- WINDOW CONTROLS
+-- ══════════════════════════════════════════════════
+local minimized=false
+BMin.MouseButton1Click:Connect(function()
+    minimized=not minimized
+    if minimized then
+        Content.Visible=false Sidebar.Visible=false AccBar.Visible=false
+        TS:Create(Main,TweenInfo.new(0.2),{Size=UDim2.fromOffset(PW,TBH)}):Play()
+    else
+        TS:Create(Main,TweenInfo.new(0.2),{Size=UDim2.fromOffset(PW,PH)}):Play()
+        task.wait(0.18) Content.Visible=true Sidebar.Visible=true AccBar.Visible=true
+    end
+end)
+
+BClose.MouseButton1Click:Connect(function()
+    Main.Visible=false FBtn.Visible=true
+end)
+
+FBtn.MouseButton1Click:Connect(function()
+    Main.Visible=true FBtn.Visible=false
+end)
+
+UIS.InputBegan:Connect(function(inp,gpe)
+    if gpe then return end
+    if inp.KeyCode==Enum.KeyCode.RightShift then
+        Main.Visible=not Main.Visible FBtn.Visible=not Main.Visible
+    end
+end)
+
+-- Drag
+do
+    local drag=false local ds,dp
+    TB.InputBegan:Connect(function(inp)
+        if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
+            drag=true ds=inp.Position dp=Main.Position
+            inp.Changed:Connect(function() if inp.UserInputState==Enum.UserInputState.End then drag=false end end)
+        end
+    end)
+    UIS.InputChanged:Connect(function(inp)
+        if drag and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch) then
+            local d=inp.Position-ds
+            Main.Position=UDim2.new(dp.X.Scale,dp.X.Offset+d.X,dp.Y.Scale,dp.Y.Offset+d.Y)
+        end
+    end)
+end
+
+-- Boot animation
+Main.BackgroundTransparency=1 Main.Size=UDim2.fromOffset(math.floor(PW*0.88),math.floor(PH*0.88))
+TS:Create(Main,TweenInfo.new(0.3,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Size=UDim2.fromOffset(PW,PH),BackgroundTransparency=0}):Play()
+
+selPage("Home")
+print("[SkyfallHub v20 Ultra] 42 features loaded · "..#Players:GetPlayers().." online")
