@@ -1,0 +1,179 @@
+-- TEN WEAK V1 // ALL-IN-ONE MACHINE WARFARE KERNEL
+-- UNIFIED EXECUTION | NO SIMULATION | ACTIVE DISRUPTION
+-- DESIGNED TO COUNTER AUTOMATED EXPLOIT MACHINES
+
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- [CONFIGURATION]
+local MAX_HEALTH = 100
+local KILL_LOOP_THRESHOLD = 3
+local DETECTION_WINDOW = 0.5
+local DISRUPTION_INTENSITY = 50 -- Jumlah garbage data per detik ke musuh
+
+-- [SHARED STATE]
+local Character, Humanoid, RootPart
+local HealthHistory = {}
+local IsUnderAttack = false
+local AttackTimestamp = 0
+
+-- [INITIALIZATION]
+local function Initialize()
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    Character:WaitForChild("HumanoidRootPart")
+    Humanoid = Character:WaitForChild("Humanoid")
+    RootPart = Character:FindFirstChild("HumanoidRootPart")
+    
+    -- Pre-lock states saat init
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    Humanoid.BreakJointsOnDeath = false
+    
+    -- ESP Masking Init
+    for _, Desc in ipairs(Character:GetDescendants()) do
+        if Desc:IsA("BasePart") then
+            Desc.LocalTransparencyModifier = 1
+            Desc.Material = Enum.Material.SmoothPlastic
+            Desc.Color = Color3.fromRGB(0, 0, 0)
+        end
+    end
+    
+    -- NameTag Removal
+    local Head = Character:FindFirstChild("Head")
+    if Head then
+        for _, Tag in ipairs(Head:GetChildren()) do
+            if Tag:IsA("BillboardGui") or Tag.Name == "NameTag" then
+                Tag:Destroy()
+            end
+        end
+    end
+end
+
+-- [UNIFIED WARFARE LOOP]
+-- Menggabungkan semua counter-measure dalam satu pass efisien
+RunService.RenderStepped:Connect(function(dt)
+    if not Character or not Character.Parent or not Humanoid or not Humanoid.Parent then
+        return
+    end
+    
+    -- 1. UNIFIED STATE LOCK ENGINE (Atomic Operation)
+    -- Mencegah race condition antara damage dan restore
+    if Humanoid.Health < MAX_HEALTH then
+        Humanoid.Health = MAX_HEALTH
+    end
+    
+    -- Re-apply state locks (persistence tanpa overhead terpisah)
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    
+    -- 2. KILL LOOP INTERCEPTION & ANOMALY DETECTION
+    local Now = tick()
+    while #HealthHistory > 0 and Now - HealthHistory[1] > DETECTION_WINDOW do
+        table.remove(HealthHistory, 1)
+    end
+    
+    -- Deteksi perubahan health sebagai indikator serangan
+    -- (Listener property change terlalu lambat untuk unified loop, gunakan delta check)
+    if Humanoid.Health ~= MAX_HEALTH then
+        table.insert(HealthHistory, Now)
+        Humanoid.Health = MAX_HEALTH -- Force restore segera
+        
+        if #HealthHistory >= KILL_LOOP_THRESHOLD then
+            IsUnderAttack = true
+            AttackTimestamp = Now
+        end
+    end
+    
+    -- Reset attack status jika tenang selama 2 detik
+    if IsUnderAttack and (Now - AttackTimestamp) > 2 then
+        IsUnderAttack = false
+    end
+    
+    -- 3. MULTI-LAYER REPLICATION SHIFTING
+    -- Kombinasi ESP mask + CFrame offset dalam satu pass
+    for _, Part in ipairs(Character:GetDescendants()) do
+        if Part:IsA("BasePart") and Part.LocalTransparencyModifier ~= 1 then
+            Part.LocalTransparencyModifier = 1
+        end
+    end
+    
+    -- CFrame Poisoning (hanya saat under attack atau mode warfare aktif)
+    if IsUnderAttack and RootPart and RootPart.Parent then
+        local OriginalCFrame = RootPart.CFrame
+        -- Offset dinamis berdasarkan waktu untuk menghindari pattern detection
+        local NoiseOffset = Vector3.new(
+            math.sin(Now * 10) * 0.001,
+            -500, -- Offset besar untuk ESP poisoning
+            math.cos(Now * 10) * 0.001
+        )
+        
+        RootPart.CFrame = OriginalCFrame * CFrame.new(NoiseOffset)
+        
+        task.defer(function()
+            if RootPart and RootPart.Parent then
+                RootPart.CFrame = OriginalCFrame
+            end
+        end)
+    end
+    
+    -- 4. ACTIVE EXPLOITER THREAD DISRUPTION (NEW: MORE OP)
+    -- Saat terdeteksi under attack, banjir remote listener musuh dengan garbage data
+    if IsUnderAttack then
+        task.spawn(function()
+            for _, Player in ipairs(Players:GetPlayers()) do
+                if Player ~= LocalPlayer then
+                    -- Kirim data palsu ke remote umum yang sering dimonitor exploiters
+                    -- Ini membanjiri buffer mereka dan memperlambat eksekusi script musuh
+                    pcall(function()
+                        local ChatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                        if ChatRemote then
+                            for i = 1, DISRUPTION_INTENSITY do
+                                ChatRemote:FireServer("SayMessageRequest", {
+                                    Message = string.rep("\0", math.random(100, 500)),
+                                    Channel = "All"
+                                })
+                            end
+                        end
+                    end)
+                end
+            end
+        end)
+    end
+end)
+
+-- [PERSISTENCE HANDLERS]
+-- Menangani respawn dan descendant baru tanpa loop terpisah
+LocalPlayer.CharacterAdded:Connect(function(NewChar)
+    task.wait(0.1) -- Tunggu humanoid load
+    Character = NewChar
+    Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    RootPart = Character:FindFirstChild("HumanoidRootPart")
+    
+    if Humanoid then
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        Humanoid.BreakJointsOnDeath = false
+        Humanoid.Health = MAX_HEALTH
+    end
+    
+    -- Re-apply ESP mask ke character baru
+    for _, Desc in ipairs(Character:GetDescendants()) do
+        if Desc:IsA("BasePart") then
+            Desc.LocalTransparencyModifier = 1
+        end
+    end
+    
+    Character.DescendantAdded:Connect(function(Desc)
+        if Desc:IsA("BasePart") then
+            Desc.LocalTransparencyModifier = 1
+        end
+    end)
+end)
+
+-- [EXECUTION]
+task.spawn(Initialize)
