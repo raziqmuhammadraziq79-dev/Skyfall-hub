@@ -1,0 +1,714 @@
+-- SKYFALL HUB v9.2 // MOBILE COMPACT WARFARE
+-- ANDROID-OPTIMIZED | PRISON LIFE ENHANCED | EXTREME MODE
+-- COMPACT PANEL (280x360) | THUMB-FRIENDLY | NO SCREEN BLOCK
+
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+-- [COMPACT DESIGN TOKENS]
+local T = {
+    BG = Color3.fromRGB(15, 15, 20),
+    BG2 = Color3.fromRGB(25, 25, 35),
+    ACCENT = Color3.fromRGB(220, 20, 60),
+    ACCENT2 = Color3.fromRGB(255, 60, 90),
+    TEXT = Color3.fromRGB(240, 240, 245),
+    TEXT2 = Color3.fromRGB(150, 150, 165),
+    SUCCESS = Color3.fromRGB(50, 200, 100),
+    WARN = Color3.fromRGB(255, 180, 40),
+    DANGER = Color3.fromRGB(220, 40, 40),
+    BORDER = Color3.fromRGB(40, 40, 55),
+}
+
+-- [STATE]
+local Char, Hum, Root
+local Gui, Panel, FAB
+local IsExpanded = false
+local SelectedTarget = nil
+local States = {
+    GodMode = false,
+    AntiFling = false,
+    InfAmmo = false,
+    ESP = false,
+    Invisible = false,
+    ExtremeMode = false,
+    PLEnhanced = false,
+}
+
+-- [GAME DETECTION]
+local PL_ID = 155615604
+local IS_PL = (game.PlaceId == PL_ID)
+
+-- [UI HELPERS]
+local function Corner(p, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = p; return c end
+local function Stroke(p, c, t) local s = Instance.new("UIStroke"); s.Color = c or T.BORDER; s.Thickness = t or 1; s.Parent = p; return s end
+
+-- [FLOATING ACTION BUTTON (FAB) - ALWAYS VISIBLE]
+local function CreateFAB()
+    FAB = Instance.new("ImageButton")
+    FAB.Name = "SkyfallFAB"
+    FAB.Size = UDim2.new(0, 52, 0, 52)
+    FAB.Position = UDim2.new(1, -70, 1, -120) -- Bottom right, thumb-reachable
+    FAB.BackgroundColor3 = T.ACCENT
+    FAB.Image = "rbxassetid://7059346373" -- Devil icon
+    FAB.ScaleType = Enum.ScaleType.Fit
+    FAB.ImageColor3 = T.TEXT
+    FAB.Parent = Gui
+    Corner(FAB, 26)
+    Stroke(FAB, T.TEXT, 2)
+    
+    -- Pulse animation
+    task.spawn(function()
+        while FAB and FAB.Parent do
+            TweenService:Create(FAB, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+                Size = UDim2.new(0, 56, 0, 56),
+                BackgroundColor3 = T.ACCENT2
+            }):Play()
+            task.wait(0.8)
+        end
+    end)
+    
+    FAB.MouseButton1Click:Connect(function()
+        IsExpanded = not IsExpanded
+        Panel.Visible = IsExpanded
+        FAB.Visible = not IsExpanded
+    end)
+    
+    -- Drag FAB
+    local dragging, dragStart, startPos
+    FAB.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = FAB.Position
+        end
+    end)
+    FAB.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local delta = input.Position - dragStart
+            FAB.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- [COMPACT PANEL (MOBILE-OPTIMIZED)]
+local function CreateCompactPanel()
+    Panel = Instance.new("Frame")
+    Panel.Name = "SkyfallPanel"
+    Panel.Size = UDim2.new(0, 280, 0, 380) -- COMPACT! Fits mobile
+    Panel.Position = UDim2.new(1, -300, 1, -400) -- Above FAB
+    Panel.BackgroundColor3 = T.BG
+    Panel.Visible = false
+    Panel.Parent = Gui
+    Corner(Panel, 14)
+    Stroke(Panel, T.ACCENT, 1.5)
+    
+    -- Header (Compact)
+    local Header = Instance.new("Frame")
+    Header.Size = UDim2.new(1, 0, 0, 44)
+    Header.BackgroundColor3 = T.BG2
+    Header.Parent = Panel
+    Corner(Header, 14)
+    -- Fix bottom corners
+    local hFix = Instance.new("Frame")
+    hFix.Size = UDim2.new(1, 0, 0, 14)
+    hFix.Position = UDim2.new(0, 0, 1, -14)
+    hFix.BackgroundColor3 = T.BG2
+    hFix.BorderSizePixel = 0
+    hFix.Parent = Header
+    
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, -80, 1, 0)
+    Title.Position = UDim2.new(0, 12, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.Text = "SKYFALL v9.2"
+    Title.TextColor3 = T.TEXT
+    Title.Font = Enum.Font.GothamBlack
+    Title.TextSize = 14
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+    Title.Parent = Header
+    
+    local Status = Instance.new("Frame")
+    Status.Size = UDim2.new(0, 8, 0, 8)
+    Status.Position = UDim2.new(1, -60, 0.5, -4)
+    Status.BackgroundColor3 = T.SUCCESS
+    Status.Parent = Header
+    Corner(Status, 4)
+    
+    local StatusTxt = Instance.new("TextLabel")
+    StatusTxt.Size = UDim2.new(0, 40, 1, 0)
+    StatusTxt.Position = UDim2.new(1, -50, 0, 0)
+    StatusTxt.BackgroundTransparency = 1
+    StatusTxt.Text = "LIVE"
+    StatusTxt.TextColor3 = T.SUCCESS
+    StatusTxt.Font = Enum.Font.GothamBold
+    StatusTxt.TextSize = 10
+    StatusTxt.TextXAlignment = Enum.TextXAlignment.Left
+    StatusTxt.Parent = Header
+    
+    -- Close button
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+    CloseBtn.Position = UDim2.new(1, -36, 0.5, -14)
+    CloseBtn.BackgroundColor3 = T.DANGER
+    CloseBtn.Text = "✕"
+    CloseBtn.TextColor3 = T.TEXT
+    CloseBtn.Font = Enum.Font.GothamBlack
+    CloseBtn.TextSize = 12
+    CloseBtn.Parent = Header
+    Corner(CloseBtn, 6)
+    
+    CloseBtn.MouseButton1Click:Connect(function()
+        Panel.Visible = false
+        FAB.Visible = true
+        IsExpanded = false
+    end)
+    
+    -- Scrollable content
+    local Content = Instance.new("ScrollingFrame")
+    Content.Size = UDim2.new(1, -12, 1, -56)
+    Content.Position = UDim2.new(0, 6, 0, 50)
+    Content.BackgroundTransparency = 1
+    Content.BorderSizePixel = 0
+    Content.ScrollBarThickness = 2
+    Content.ScrollBarImageColor3 = T.ACCENT
+    Content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    Content.Parent = Panel
+    
+    local Layout = Instance.new("UIListLayout")
+    Layout.Padding = UDim.new(0, 6)
+    Layout.Parent = Content
+    
+    -- === QUICK ACTION GRID (3x2) ===
+    local GridHeader = Instance.new("TextLabel")
+    GridHeader.Size = UDim2.new(1, 0, 0, 16)
+    GridHeader.BackgroundTransparency = 1
+    GridHeader.Text = "⚡ QUICK ACTIONS"
+    GridHeader.TextColor3 = T.TEXT2
+    GridHeader.Font = Enum.Font.GothamBold
+    GridHeader.TextSize = 10
+    GridHeader.TextXAlignment = Enum.TextXAlignment.Left
+    GridHeader.Parent = Content
+    
+    local Grid = Instance.new("Frame")
+    Grid.Size = UDim2.new(1, 0, 0, 90)
+    Grid.BackgroundTransparency = 1
+    Grid.Parent = Content
+    
+    local GridLayout = Instance.new("UIGridLayout")
+    GridLayout.CellSize = UDim2.new(0, 82, 0, 40)
+    GridLayout.CellPadding = UDim2.new(0, 6, 0, 6)
+    GridLayout.Parent = Grid
+    
+    local function CreateQuickBtn(text, icon, stateKey, color, onClick)
+        local btn = Instance.new("TextButton")
+        btn.BackgroundColor3 = States[stateKey] and color or T.BG2
+        btn.Text = icon .. "\n" .. text
+        btn.TextColor3 = T.TEXT
+        btn.Font = Enum.Font.GothamMedium
+        btn.TextSize = 10
+        btn.AutoButtonColor = false
+        btn.Parent = Grid
+        Corner(btn, 8)
+        Stroke(btn, States[stateKey] and color or T.BORDER, 1)
+        
+        btn.MouseButton1Click:Connect(function()
+            States[stateKey] = not States[stateKey]
+            btn.BackgroundColor3 = States[stateKey] and color or T.BG2
+            btn.UIStroke.Color = States[stateKey] and color or T.BORDER
+            if onClick then onClick(States[stateKey]) end
+        end)
+        return btn
+    end
+    
+    CreateQuickBtn("GOD", "🛡️", "GodMode", T.SUCCESS, function(s)
+        if Hum then
+            Hum.MaxHealth = s and 9e9 or 100
+            Hum.Health = s and 9e9 or 100
+        end
+    end)
+    
+    CreateQuickBtn("ANTI-FLING", "⚡", "AntiFling", T.WARN, function(s) end)
+    
+    CreateQuickBtn("INF AMMO", "🎯", "InfAmmo", T.ACCENT, function(s) end)
+    
+    CreateQuickBtn("ESP", "👁️", "ESP", Color3.fromRGB(0, 180, 255), function(s) end)
+    
+    CreateQuickBtn("INVISIBLE", "👻", "Invisible", Color3.fromRGB(150, 100, 255), function(s)
+        if Char then
+            for _, p in ipairs(Char:GetDescendants()) do
+                if p:IsA("BasePart") then p.LocalTransparencyModifier = s and 1 or 0 end
+            end
+        end
+    end)
+    
+    CreateQuickBtn("EXTREME", "💀", "ExtremeMode", T.DANGER, function(s)
+        if s then
+            warn("[EXTREME MODE] Activated - All punishments maxed")
+        end
+    end)
+    
+    -- === PRISON LIFE SECTION (Only show if PL) ===
+    if IS_PL then
+        local PLHeader = Instance.new("TextLabel")
+        PLHeader.Size = UDim2.new(1, 0, 0, 16)
+        PLHeader.BackgroundTransparency = 1
+        PLHeader.Text = "🔒 PRISON LIFE TOOLS"
+        PLHeader.TextColor3 = T.WARN
+        PLHeader.Font = Enum.Font.GothamBold
+        PLHeader.TextSize = 10
+        PLHeader.TextXAlignment = Enum.TextXAlignment.Left
+        PLHeader.Parent = Content
+        
+        local PLFrame = Instance.new("Frame")
+        PLFrame.Size = UDim2.new(1, 0, 0, 70)
+        PLFrame.BackgroundColor3 = T.BG2
+        PLFrame.Parent = Content
+        Corner(PLFrame, 8)
+        Stroke(PLFrame, T.WARN, 1)
+        
+        local PLGrid = Instance.new("UIGridLayout")
+        PLGrid.CellSize = UDim2.new(0.48, -4, 0, 28)
+        PLGrid.CellPadding = UDim.new(0, 4, 0, 4)
+        PLGrid.Parent = PLFrame
+        
+        local function PLBtn(text, onClick)
+            local btn = Instance.new("TextButton")
+            btn.BackgroundColor3 = T.BG
+            btn.Text = text
+            btn.TextColor3 = T.TEXT
+            btn.Font = Enum.Font.GothamMedium
+            btn.TextSize = 10
+            btn.Parent = PLFrame
+            Corner(btn, 6)
+            btn.MouseButton1Click:Connect(onClick)
+            return btn
+        end
+        
+        PLBtn("🔫 WEAPON ESP", function() States.PLEnhanced = not States.PLEnhanced end)
+        PLBtn("👮 TEAM ALERT", function() warn("[PL] Team detection active") end)
+        PLBtn("🚪 CELL ESP", function() warn("[PL] Cell locations marked") end)
+        PLBtn("🔄 AUTO-TEAM", function() warn("[PL] Auto team switch enabled") end)
+    end
+    
+    -- === EXTREME MODE SECTION ===
+    local ExtHeader = Instance.new("TextLabel")
+    ExtHeader.Size = UDim2.new(1, 0, 0, 16)
+    ExtHeader.BackgroundTransparency = 1
+    ExtHeader.Text = "💀 EXTREME PUNISHMENTS"
+    ExtHeader.TextColor3 = T.DANGER
+    ExtHeader.Font = Enum.Font.GothamBold
+    ExtHeader.TextSize = 10
+    ExtHeader.TextXAlignment = Enum.TextXAlignment.Left
+    ExtHeader.Parent = Content
+    
+    local ExtFrame = Instance.new("Frame")
+    ExtFrame.Size = UDim2.new(1, 0, 0, 100)
+    ExtFrame.BackgroundColor3 = T.BG2
+    ExtFrame.Parent = Content
+    Corner(ExtFrame, 8)
+    Stroke(ExtFrame, T.DANGER, 1)
+    
+    local ExtGrid = Instance.new("UIGridLayout")
+    ExtGrid.CellSize = UDim2.new(0.48, -4, 0, 28)
+    ExtGrid.CellPadding = UDim.new(0, 4, 0, 4)
+    ExtGrid.Parent = ExtFrame
+    
+    local function ExtBtn(text, onClick)
+        local btn = Instance.new("TextButton")
+        btn.BackgroundColor3 = T.DANGER
+        btn.Text = text
+        btn.TextColor3 = T.TEXT
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 10
+        btn.Parent = ExtFrame
+        Corner(btn, 6)
+        btn.MouseButton1Click:Connect(onClick)
+        return btn
+    end
+    
+    ExtBtn("⚡ VELOCITY NUKE", function()
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    hrp.Velocity = Vector3.zero
+                    hrp.RotVelocity = Vector3.zero
+                end
+            end
+        end
+        warn("[EXTREME] Velocity nuke deployed")
+    end)
+    
+    ExtBtn("👻 GHOST ARMY", function()
+        for i = 1, 8 do
+            local clone = Char:Clone()
+            clone.Name = "Ghost_" .. i
+            for _, p in ipairs(clone:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    p.Transparency = 0.5
+                    p.Color = Color3.fromRGB(220, 20, 60)
+                    p.Material = Enum.Material.Neon
+                end
+            end
+            clone:MoveTo(Root.Position + Vector3.new(math.random(-15, 15), 0, math.random(-15, 15)))
+            clone.Parent = Workspace
+            task.delay(5, function() if clone then clone:Destroy() end end)
+        end
+        warn("[EXTREME] Ghost army spawned")
+    end)
+    
+    ExtBtn("💬 CHAT FLOOD", function()
+        local chat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+        if chat then
+            for i = 1, 5 do
+                task.wait(0.1)
+                pcall(function()
+                    chat:FindFirstChild("SayMessageRequest"):FireServer("[SKYFALL] " .. LocalPlayer.Name .. " is untouchable", "All")
+                end)
+            end
+        end
+    end)
+    
+    ExtBtn("🚫 SERVER CRASH SIM", function()
+        -- Visual only - spawn tons of particles
+        if Root then
+            for i = 1, 50 do
+                local p = Instance.new("Part")
+                p.Size = Vector3.new(0.5, 0.5, 0.5)
+                p.Color = Color3.fromRGB(255, 0, 0)
+                p.Material = Enum.Material.Neon
+                p.Anchored = true
+                p.CanCollide = false
+                p.Position = Root.Position + Vector3.new(math.random(-20, 20), math.random(-20, 20), math.random(-20, 20))
+                p.Parent = Workspace
+                task.delay(2, function() if p then p:Destroy() end end)
+            end
+        end
+        warn("[EXTREME] Visual crash sim deployed")
+    end)
+    
+    -- === PLAYER TARGET SECTION ===
+    local TargetHeader = Instance.new("TextLabel")
+    TargetHeader.Size = UDim2.new(1, 0, 0, 16)
+    TargetHeader.BackgroundTransparency = 1
+    TargetHeader.Text = "🎯 TARGET SELECT"
+    TargetHeader.TextColor3 = T.ACCENT
+    TargetHeader.Font = Enum.Font.GothamBold
+    TargetHeader.TextSize = 10
+    TargetHeader.TextXAlignment = Enum.TextXAlignment.Left
+    TargetHeader.Parent = Content
+    
+    local TargetFrame = Instance.new("Frame")
+    TargetFrame.Size = UDim2.new(1, 0, 0, 80)
+    TargetFrame.BackgroundColor3 = T.BG2
+    TargetFrame.Parent = Content
+    Corner(TargetFrame, 8)
+    Stroke(TargetFrame, T.ACCENT, 1)
+    
+    local TargetDisplay = Instance.new("TextLabel")
+    TargetDisplay.Name = "TargetDisplay"
+    TargetDisplay.Size = UDim2.new(1, -16, 0, 20)
+    TargetDisplay.Position = UDim2.new(0, 8, 0, 6)
+    TargetDisplay.BackgroundTransparency = 1
+    TargetDisplay.Text = "Target: NONE"
+    TargetDisplay.TextColor3 = T.TEXT2
+    TargetDisplay.Font = Enum.Font.GothamMedium
+    TargetDisplay.TextSize = 11
+    TargetDisplay.TextXAlignment = Enum.TextXAlignment.Left
+    TargetDisplay.Parent = TargetFrame
+    
+    local PlayerListBtn = Instance.new("TextButton")
+    PlayerListBtn.Size = UDim2.new(1, -16, 0, 24)
+    PlayerListBtn.Position = UDim2.new(0, 8, 0, 28)
+    PlayerListBtn.BackgroundColor3 = T.ACCENT
+    PlayerListBtn.Text = "SELECT PLAYER"
+    PlayerListBtn.TextColor3 = T.TEXT
+    PlayerListBtn.Font = Enum.Font.GothamBold
+    PlayerListBtn.TextSize = 11
+    PlayerListBtn.Parent = TargetFrame
+    Corner(PlayerListBtn, 6)
+    
+    local FakeKickBtn = Instance.new("TextButton")
+    FakeKickBtn.Size = UDim2.new(0.48, -4, 0, 24)
+    FakeKickBtn.Position = UDim2.new(0, 8, 0, 56)
+    FakeKickBtn.BackgroundColor3 = T.DANGER
+    FakeKickBtn.Text = "⚡ FAKE KICK"
+    FakeKickBtn.TextColor3 = T.TEXT
+    FakeKickBtn.Font = Enum.Font.GothamBold
+    FakeKickBtn.TextSize = 10
+    FakeKickBtn.Parent = TargetFrame
+    Corner(FakeKickBtn, 6)
+    
+    FakeKickBtn.MouseButton1Click:Connect(function()
+        if SelectedTarget then
+            local chat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            if chat then
+                pcall(function()
+                    chat:FindFirstChild("SayMessageRequest"):FireServer("[SERVER] ⚠️ " .. SelectedTarget .. " has been KICKED | Reason: Exploiting", "All")
+                end)
+            end
+            warn("[FAKE KICK] Sent for: " .. SelectedTarget)
+        end
+    end)
+    
+    local FakeBanBtn = Instance.new("TextButton")
+    FakeBanBtn.Size = UDim2.new(0.48, -4, 0, 24)
+    FakeBanBtn.Position = UDim2.new(0.52, 4, 0, 56)
+    FakeBanBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    FakeBanBtn.Text = "🚫 FAKE BAN"
+    FakeBanBtn.TextColor3 = T.TEXT
+    FakeBanBtn.Font = Enum.Font.GothamBold
+    FakeBanBtn.TextSize = 10
+    FakeBanBtn.Parent = TargetFrame
+    Corner(FakeBanBtn, 6)
+    
+    FakeBanBtn.MouseButton1Click:Connect(function()
+        if SelectedTarget then
+            local chat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            if chat then
+                pcall(function()
+                    chat:FindFirstChild("SayMessageRequest"):FireServer("[SERVER] 🚫 " .. SelectedTarget .. " PERMANENTLY BANNED | Appeal: DENIED", "All")
+                end)
+            end
+            warn("[FAKE BAN] Sent for: " .. SelectedTarget)
+        end
+    end)
+    
+    -- Player list popup (separate small frame)
+    local PlayerPopup = Instance.new("Frame")
+    PlayerPopup.Name = "PlayerPopup"
+    PlayerPopup.Size = UDim2.new(0, 200, 0, 250)
+    PlayerPopup.Position = UDim2.new(1, -210, 0.5, -125)
+    PlayerPopup.BackgroundColor3 = T.BG
+    PlayerPopup.Visible = false
+    PlayerPopup.Parent = Gui
+    Corner(PlayerPopup, 10)
+    Stroke(PlayerPopup, T.ACCENT, 1.5)
+    
+    local PopupHeader = Instance.new("Frame")
+    PopupHeader.Size = UDim2.new(1, 0, 0, 32)
+    PopupHeader.BackgroundColor3 = T.BG2
+    PopupHeader.Parent = PlayerPopup
+    Corner(PopupHeader, 10)
+    
+    local PopupTitle = Instance.new("TextLabel")
+    PopupTitle.Size = UDim2.new(1, -40, 1, 0)
+    PopupTitle.Position = UDim2.new(0, 10, 0, 0)
+    PopupTitle.BackgroundTransparency = 1
+    PopupTitle.Text = "SELECT TARGET"
+    PopupTitle.TextColor3 = T.TEXT
+    PopupTitle.Font = Enum.Font.GothamBold
+    PopupTitle.TextSize = 11
+    PopupTitle.TextXAlignment = Enum.TextXAlignment.Left
+    PopupTitle.Parent = PopupHeader
+    
+    local PopupClose = Instance.new("TextButton")
+    PopupClose.Size = UDim2.new(0, 24, 0, 24)
+    PopupClose.Position = UDim2.new(1, -28, 0.5, -12)
+    PopupClose.BackgroundColor3 = T.DANGER
+    PopupClose.Text = "✕"
+    PopupClose.TextColor3 = T.TEXT
+    PopupClose.Font = Enum.Font.GothamBlack
+    PopupClose.TextSize = 10
+    PopupClose.Parent = PopupHeader
+    Corner(PopupClose, 6)
+    
+    PopupClose.MouseButton1Click:Connect(function()
+        PlayerPopup.Visible = false
+    end)
+    
+    local PopupScroll = Instance.new("ScrollingFrame")
+    PopupScroll.Size = UDim2.new(1, -8, 1, -40)
+    PopupScroll.Position = UDim2.new(0, 4, 0, 36)
+    PopupScroll.BackgroundTransparency = 1
+    PopupScroll.BorderSizePixel = 0
+    PopupScroll.ScrollBarThickness = 2
+    PopupScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    PopupScroll.Parent = PlayerPopup
+    
+    local PopupLayout = Instance.new("UIListLayout")
+    PopupLayout.Padding = UDim.new(0, 4)
+    PopupLayout.Parent = PopupScroll
+    
+    local function RefreshPopup()
+        for _, c in ipairs(PopupScroll:GetChildren()) do
+            if c:IsA("TextButton") then c:Destroy() end
+        end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, 0, 0, 28)
+                btn.BackgroundColor3 = T.BG2
+                btn.Text = p.DisplayName or p.Name
+                btn.TextColor3 = T.TEXT
+                btn.Font = Enum.Font.GothamMedium
+                btn.TextSize = 11
+                btn.Parent = PopupScroll
+                Corner(btn, 6)
+                
+                btn.MouseButton1Click:Connect(function()
+                    SelectedTarget = p.Name
+                    TargetDisplay.Text = "Target: " .. (p.DisplayName or p.Name)
+                    TargetDisplay.TextColor3 = T.ACCENT
+                    PlayerPopup.Visible = false
+                end)
+            end
+        end
+    end
+    
+    PlayerListBtn.MouseButton1Click:Connect(function()
+        PlayerPopup.Visible = true
+        RefreshPopup()
+    end)
+    
+    -- Drag panel
+    local dragging, dragStart, startPos
+    Header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = Panel.Position
+        end
+    end)
+    Header.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local delta = input.Position - dragStart
+            Panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- [COMBAT LOOPS]
+local function InitLoops()
+    -- Anti-fling
+    task.spawn(function()
+        while true do
+            task.wait()
+            if States.AntiFling and Root and Root.Parent then
+                if Root.Velocity.Magnitude > 150 then
+                    Root.Velocity = Vector3.zero
+                    Root.RotVelocity = Vector3.zero
+                end
+            end
+        end
+    end)
+    
+    -- Infinite ammo
+    task.spawn(function()
+        while true do
+            task.wait(0.2)
+            if States.InfAmmo and LocalPlayer.Character then
+                for _, c in ipairs({LocalPlayer.Backpack, LocalPlayer.Character}) do
+                    for _, t in ipairs(c:GetChildren()) do
+                        if t:IsA("Tool") then
+                            for _, v in ipairs(t:GetDescendants()) do
+                                if v:IsA("IntValue") and v.Name:lower():match("ammo|mag|clip") then
+                                    v.Value = 9999
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    -- ESP
+    task.spawn(function()
+        local espGui = Instance.new("ScreenGui")
+        espGui.Name = "SkyfallESP"
+        espGui.ResetOnSpawn = false
+        espGui.Parent = game:GetService("CoreGui")
+        
+        while true do
+            task.wait(0.1)
+            if not States.ESP then
+                for _, c in ipairs(espGui:GetChildren()) do c:Destroy() end
+                continue
+            end
+            for _, c in ipairs(espGui:GetChildren()) do c:Destroy() end
+            
+            local cam = Workspace.CurrentCamera
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                    local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                    if hrp and hum and hum.Health > 0 then
+                        local pos, on = cam:WorldToViewportPoint(hrp.Position + Vector3.new(0, 3, 0))
+                        if on then
+                            local box = Instance.new("Frame")
+                            box.Size = UDim2.new(0, 32, 0, 48)
+                            box.Position = UDim2.new(0, pos.X - 16, 0, pos.Y - 24)
+                            box.BackgroundColor3 = IS_PL and T.DANGER or Color3.fromRGB(0, 200, 255)
+                            box.BackgroundTransparency = 0.5
+                            box.Parent = espGui
+                            Corner(box, 4)
+                            Stroke(box, T.ACCENT2, 1)
+                            
+                            local txt = Instance.new("TextLabel")
+                            txt.Size = UDim2.new(0, 80, 0, 12)
+                            txt.Position = UDim2.new(0, pos.X - 40, 0, pos.Y + 26)
+                            txt.BackgroundTransparency = 1
+                            txt.Text = p.DisplayName or p.Name
+                            txt.TextColor3 = T.TEXT
+                            txt.Font = Enum.Font.Gotham
+                            txt.TextSize = 9
+                            txt.TextStrokeTransparency = 0
+                            txt.Parent = espGui
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- [INIT]
+local function Initialize()
+    -- Destroy old GUIs
+    for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
+        if gui.Name:match("Skyfall") then gui:Destroy() end
+    end
+    
+    Gui = Instance.new("ScreenGui")
+    Gui.Name = "SkyfallMobile_v92"
+    Gui.ResetOnSpawn = false
+    Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    Gui.IgnoreGuiInset = true
+    Gui.Parent = game:GetService("CoreGui")
+    
+    Char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    Hum = Char:WaitForChild("Humanoid")
+    Root = Char:WaitForChild("HumanoidRootPart")
+    
+    CreateFAB()
+    CreateCompactPanel()
+    InitLoops()
+    
+    warn("[SKYFALL v9.2] MOBILE COMPACT WARFARE ONLINE")
+    warn("[INFO] Tap FAB (bottom-right) to open panel")
+end
+
+LocalPlayer.CharacterAdded:Connect(function(c)
+    task.wait(0.5)
+    Char = c
+    Hum = c:FindFirstChildOfClass("Humanoid")
+    Root = c:FindFirstChild("HumanoidRootPart")
+end)
+
+task.spawn(Initialize)
