@@ -1,0 +1,887 @@
+-- --- SkyFall_Hub_v5.lua (single LocalScript, StarterPlayerScripts) ---
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local Camera = Workspace.CurrentCamera
+
+local THEME = {
+	Main = Color3.fromRGB(15, 15, 35),
+	Accent = Color3.fromRGB(0, 102, 255),
+	Text = Color3.fromRGB(255, 255, 255),
+	SubText = Color3.fromRGB(150, 150, 180),
+	Border = Color3.fromRGB(0, 102, 255),
+	Dark = Color3.fromRGB(25, 25, 50),
+	ToggleOn = Color3.fromRGB(0, 153, 255),
+	ToggleOff = Color3.fromRGB(80, 80, 100),
+	Green = Color3.fromRGB(0, 200, 100),
+	Warn = Color3.fromRGB(255, 170, 0)
+}
+
+local activeFeatures = {}
+local connections = {}
+local originalLighting = {
+	Brightness = Lighting.Brightness, ClockTime = Lighting.ClockTime,
+	FogEnd = Lighting.FogEnd, Ambient = Lighting.Ambient, OutdoorAmbient = Lighting.OutdoorAmbient
+}
+local ORIGINAL_WALKSPEED = 16
+local flying, flySpeed, verticalInput = false, 50, 0
+local flyVelocity, flyGyro
+
+local function safeGetCharacterParts()
+	local character = player.Character
+	if not character then return nil, nil, nil end
+	return character, character:FindFirstChildOfClass("Humanoid"), character:FindFirstChild("HumanoidRootPart")
+end
+
+local function disconnectFeature(name)
+	if connections[name] then connections[name]:Disconnect() connections[name] = nil end
+end
+
+-- ============ FEATURES (movement/visual, unchanged mechanics) ============
+local Features = {}
+
+Features["God Mode"] = function(state)
+	activeFeatures["God Mode"] = state
+	disconnectFeature("God Mode")
+	local _, humanoid = safeGetCharacterParts()
+	if not humanoid then return end
+	if state then
+		humanoid.MaxHealth = math.huge
+		humanoid.Health = math.huge
+		connections["God Mode"] = humanoid.HealthChanged:Connect(function()
+			if activeFeatures["God Mode"] then pcall(function() humanoid.Health = humanoid.MaxHealth end) end
+		end)
+	else
+		humanoid.MaxHealth = 100
+		humanoid.Health = 100
+	end
+end
+
+Features["Speed Hack"] = function(state)
+	activeFeatures["Speed Hack"] = state
+	local _, humanoid = safeGetCharacterParts()
+	if not humanoid then return end
+	humanoid.WalkSpeed = state and (ORIGINAL_WALKSPEED * 3) or ORIGINAL_WALKSPEED
+end
+
+Features["Tidak Ada Klip"] = function(state)
+	activeFeatures["Tidak Ada Klip"] = state
+	disconnectFeature("Noclip")
+	if state then
+		connections["Noclip"] = RunService.Stepped:Connect(function()
+			local character = player.Character
+			if not character then return end
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then part.CanCollide = false end
+			end
+		end)
+	else
+		local character = player.Character
+		if character then
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then part.CanCollide = true end
+			end
+		end
+	end
+end
+
+Features["Inf Jump"] = function(state)
+	activeFeatures["Inf Jump"] = state
+	disconnectFeature("Inf Jump")
+	if state then
+		connections["Inf Jump"] = UserInputService.JumpRequest:Connect(function()
+			local _, humanoid = safeGetCharacterParts()
+			if humanoid then pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end) end
+		end)
+	end
+end
+
+Features["Fullbright"] = function(state)
+	activeFeatures["Fullbright"] = state
+	if state then
+		Lighting.Brightness = 2
+		Lighting.FogEnd = 100000
+		Lighting.Ambient = Color3.fromRGB(150, 150, 150)
+		Lighting.OutdoorAmbient = Color3.fromRGB(150, 150, 150)
+	else
+		Lighting.Brightness = originalLighting.Brightness
+		Lighting.FogEnd = originalLighting.FogEnd
+		Lighting.Ambient = originalLighting.Ambient
+		Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+	end
+end
+
+Features["Night Mode"] = function(state)
+	activeFeatures["Night Mode"] = state
+	Lighting.ClockTime = state and 0 or originalLighting.ClockTime
+end
+
+local function cleanupFlightPhysics()
+	if flyVelocity and flyVelocity.Parent then flyVelocity:Destroy() flyVelocity = nil end
+	if flyGyro and flyGyro.Parent then flyGyro:Destroy() flyGyro = nil end
+end
+local function setupFlightPhysics()
+	cleanupFlightPhysics()
+	local _, _, root = safeGetCharacterParts()
+	if not root then return end
+	flyVelocity = Instance.new("BodyVelocity")
+	flyVelocity.Velocity = Vector3.new(0, 0, 0)
+	flyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	flyVelocity.Parent = root
+	flyGyro = Instance.new("BodyGyro")
+	flyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	flyGyro.P = 9375
+	flyGyro.D = 375
+	flyGyro.CFrame = root.CFrame
+	flyGyro.Parent = root
+end
+
+Features["Terbang"] = function(state)
+	activeFeatures["Terbang"] = state
+	local character, humanoid, root = safeGetCharacterParts()
+	if not humanoid or not root then return end
+	if state then
+		flying = true
+		setupFlightPhysics()
+		humanoid.AutoRotate = false
+	else
+		flying = false
+		humanoid.AutoRotate = true
+		verticalInput = 0
+		if flyVelocity and flyVelocity.Parent then flyVelocity.Velocity = Vector3.new(0, 0, 0) end
+		cleanupFlightPhysics()
+	end
+end
+Features["Fly Ascend"] = function(active) if flying then verticalInput = active and 1 or 0 end end
+Features["Fly Descend"] = function(active) if flying then verticalInput = active and -1 or 0 end end
+
+RunService.RenderStepped:Connect(function()
+	if not flying then return end
+	local character, humanoid, root = safeGetCharacterParts()
+	if not character or not humanoid or not root then return end
+	local moveDir = humanoid.MoveDirection
+	local worldMove = Vector3.new(moveDir.X, 0, moveDir.Z) + Vector3.new(0, verticalInput, 0)
+	if flyVelocity and flyVelocity.Parent then flyVelocity.Velocity = worldMove * flySpeed end
+	if flyGyro and flyGyro.Parent then
+		flyGyro.CFrame = CFrame.new(root.Position, root.Position + Camera.CFrame.LookVector)
+	end
+end)
+
+-- ============ ESP (player) ============
+local espContainer = Instance.new("Folder")
+espContainer.Name = "SkyFallESP"
+espContainer.Parent = CoreGui
+local espObjects = {}
+
+local function createESPForPlayer(targetPlayer)
+	if espObjects[targetPlayer] or targetPlayer == player then return end
+	local highlight = Instance.new("Highlight")
+	highlight.FillColor = THEME.Accent
+	highlight.FillTransparency = 0.7
+	highlight.OutlineColor = Color3.fromRGB(0, 200, 255)
+	highlight.Enabled = false
+	highlight.Parent = espContainer
+	local billboard = Instance.new("BillboardGui")
+	billboard.Size = UDim2.new(0, 200, 0, 50)
+	billboard.AlwaysOnTop = true
+	billboard.Enabled = false
+	billboard.Parent = espContainer
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 14
+	nameLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
+	nameLabel.TextStrokeTransparency = 0
+	nameLabel.Text = targetPlayer.Name
+	nameLabel.Parent = billboard
+	local distLabel = Instance.new("TextLabel")
+	distLabel.Size = UDim2.new(1, 0, 0.5, 0)
+	distLabel.Position = UDim2.new(0, 0, 0.5, 0)
+	distLabel.BackgroundTransparency = 1
+	distLabel.Font = Enum.Font.Gotham
+	distLabel.TextSize = 12
+	distLabel.TextColor3 = THEME.Text
+	distLabel.TextStrokeTransparency = 0
+	distLabel.Parent = billboard
+	espObjects[targetPlayer] = { highlight = highlight, billboard = billboard, distLabel = distLabel }
+end
+local function removeESPForPlayer(targetPlayer)
+	local obj = espObjects[targetPlayer]
+	if obj then obj.highlight:Destroy() obj.billboard:Destroy() espObjects[targetPlayer] = nil end
+end
+for _, p in ipairs(Players:GetPlayers()) do createESPForPlayer(p) end
+Players.PlayerAdded:Connect(createESPForPlayer)
+Players.PlayerRemoving:Connect(removeESPForPlayer)
+
+Features["ESP Player"] = function(state)
+	activeFeatures["ESP Player"] = state
+	for _, obj in pairs(espObjects) do
+		obj.highlight.Enabled = state
+		obj.billboard.Enabled = state
+	end
+end
+
+RunService.RenderStepped:Connect(function()
+	if not activeFeatures["ESP Player"] then return end
+	for targetPlayer, obj in pairs(espObjects) do
+		local character = targetPlayer.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if root then
+			obj.highlight.Adornee = character
+			obj.billboard.Adornee = root
+			obj.distLabel.Text = string.format("%.0fm", (Camera.CFrame.Position - root.Position).Magnitude)
+		else
+			obj.highlight.Enabled = false
+			obj.billboard.Enabled = false
+		end
+	end
+end)
+
+Features["Teleport Home"] = function()
+	local _, _, root = safeGetCharacterParts()
+	if root then root.CFrame = CFrame.new(0, 10, 0) end
+end
+Features["Teleport Spawn"] = function()
+	local _, _, root = safeGetCharacterParts()
+	local spawns = Workspace:FindFirstChildOfClass("SpawnLocation")
+	if root and spawns then root.CFrame = spawns.CFrame + Vector3.new(0, 3, 0) end
+end
+
+-- ============ RADAR — Prison Life guards / Evade monster ============
+-- Passive proximity awareness only. Reads publicly visible Workspace state
+-- (position, name/team tags) that's already rendered on screen. Does not
+-- touch door locks, keycard items, or the monster's AI/pathfinding state.
+local radarContainer = Instance.new("Folder")
+radarContainer.Name = "SkyFallRadar"
+radarContainer.Parent = CoreGui
+local radarBillboards = {}
+
+local function isLikelyGuard(targetPlayer)
+	local ok, team = pcall(function() return targetPlayer.Team end)
+	if ok and team then
+		local teamName = team.Name:lower()
+		if teamName:find("cop") or teamName:find("guard") or teamName:find("police") then
+			return true
+		end
+	end
+	return false
+end
+
+local function isLikelyMonster(instance)
+	local n = instance.Name:lower()
+	return n:find("monster") or n:find("enemy") or n:find("chaser") or n:find("boss")
+end
+
+local function makeRadarTag(targetName, color)
+	local billboard = Instance.new("BillboardGui")
+	billboard.Size = UDim2.new(0, 150, 0, 40)
+	billboard.AlwaysOnTop = true
+	billboard.Enabled = false
+	billboard.Parent = radarContainer
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0.5, 0)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 13
+	label.TextColor3 = color
+	label.TextStrokeTransparency = 0
+	label.Text = targetName
+	label.Parent = billboard
+	local distLabel = Instance.new("TextLabel")
+	distLabel.Size = UDim2.new(1, 0, 0.5, 0)
+	distLabel.Position = UDim2.new(0, 0, 0.5, 0)
+	distLabel.BackgroundTransparency = 1
+	distLabel.Font = Enum.Font.Gotham
+	distLabel.TextSize = 11
+	distLabel.TextColor3 = THEME.Text
+	distLabel.TextStrokeTransparency = 0
+	distLabel.Parent = billboard
+	return billboard, distLabel
+end
+
+Features["Guard Radar"] = function(state)
+	activeFeatures["Guard Radar"] = state
+	if not state then
+		for _, obj in pairs(radarBillboards) do obj.billboard.Enabled = false end
+		return
+	end
+	for _, targetPlayer in ipairs(Players:GetPlayers()) do
+		if targetPlayer ~= player and isLikelyGuard(targetPlayer) then
+			if not radarBillboards[targetPlayer] then
+				local bb, dl = makeRadarTag(targetPlayer.Name .. " [GUARD]", THEME.Warn)
+				radarBillboards[targetPlayer] = { billboard = bb, distLabel = dl }
+			end
+			radarBillboards[targetPlayer].billboard.Enabled = true
+		end
+	end
+end
+
+Features["Monster Radar"] = function(state)
+	activeFeatures["Monster Radar"] = state
+	if not state then return end
+	-- scans Workspace once on activation; re-scan on toggle rather than every frame
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		if obj:IsA("Model") and isLikelyMonster(obj) and not radarBillboards[obj] then
+			local bb, dl = makeRadarTag(obj.Name .. " [THREAT]", Color3.fromRGB(255, 60, 60))
+			radarBillboards[obj] = { billboard = bb, distLabel = dl, isMonster = true }
+		end
+	end
+end
+
+RunService.RenderStepped:Connect(function()
+	if not (activeFeatures["Guard Radar"] or activeFeatures["Monster Radar"]) then return end
+	for target, obj in pairs(radarBillboards) do
+		local root
+		if target:IsA("Player") then
+			local character = target.Character
+			root = character and character:FindFirstChild("HumanoidRootPart")
+		elseif target:IsA("Model") then
+			root = target.PrimaryPart or target:FindFirstChild("HumanoidRootPart") or target:FindFirstChildWhichIsA("BasePart")
+		end
+		if root and obj.billboard.Enabled then
+			obj.billboard.Adornee = root
+			obj.distLabel.Text = string.format("%.0fm", (Camera.CFrame.Position - root.Position).Magnitude)
+		end
+	end
+end)
+
+player.CharacterAdded:Connect(function()
+	task.wait(1)
+	for name, state in pairs(activeFeatures) do
+		if state and Features[name] then pcall(Features[name], true) end
+	end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.F then pcall(Features["Terbang"], not activeFeatures["Terbang"]) end
+	if flying then
+		if input.KeyCode == Enum.KeyCode.Space then verticalInput = 1 end
+		if input.KeyCode == Enum.KeyCode.LeftControl then verticalInput = -1 end
+	end
+end)
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.Space and verticalInput == 1 then verticalInput = 0 end
+	if input.KeyCode == Enum.KeyCode.LeftControl and verticalInput == -1 then verticalInput = 0 end
+end)
+
+-- ============ GUI — responsive, scale-based, fixes the collision bug ============
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "SkyFallPanel"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = playerGui
+
+local mainPanel = Instance.new("Frame")
+mainPanel.Size = UDim2.new(0.82, 0, 0.72, 0)
+mainPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+mainPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+mainPanel.BackgroundColor3 = THEME.Main
+mainPanel.BorderSizePixel = 0
+mainPanel.Active = true
+mainPanel.ClipsDescendants = true
+mainPanel.Parent = screenGui
+
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 16)
+panelCorner.Parent = mainPanel
+
+local panelStroke = Instance.new("UIStroke")
+panelStroke.Color = THEME.Border
+panelStroke.Thickness = 2
+panelStroke.Parent = mainPanel
+
+do
+	local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
+	local function update(input)
+		local delta = input.Position - dragStart
+		mainPanel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+	mainPanel.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = mainPanel.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then dragging = false end
+			end)
+		end
+	end)
+	mainPanel.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then update(input) end
+	end)
+end
+
+-- Header — fixed pixel height, everything below is scale-relative to what's left
+local HEADER_HEIGHT = 64
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, HEADER_HEIGHT)
+header.BackgroundColor3 = THEME.Dark
+header.BorderSizePixel = 0
+header.Parent = mainPanel
+
+local headerCorner = Instance.new("UICorner")
+headerCorner.CornerRadius = UDim.new(0, 16)
+headerCorner.Parent = header
+
+local headerFix = Instance.new("Frame")
+headerFix.Size = UDim2.new(1, 0, 0, 16)
+headerFix.Position = UDim2.new(0, 0, 1, -16)
+headerFix.BackgroundColor3 = THEME.Dark
+headerFix.BorderSizePixel = 0
+headerFix.ZIndex = 0
+headerFix.Parent = header
+
+local logoContainer = Instance.new("Frame")
+logoContainer.Size = UDim2.new(0, 44, 0, 44)
+logoContainer.Position = UDim2.new(0, 10, 0.5, -22)
+logoContainer.BackgroundColor3 = THEME.Accent
+logoContainer.BorderSizePixel = 0
+logoContainer.Parent = header
+local logoCorner = Instance.new("UICorner")
+logoCorner.CornerRadius = UDim.new(0, 10)
+logoCorner.Parent = logoContainer
+
+local logoText = Instance.new("TextLabel")
+logoText.Text = "SF"
+logoText.Font = Enum.Font.GothamBlack
+logoText.TextSize = 20
+logoText.TextColor3 = Color3.fromRGB(255, 255, 255)
+logoText.BackgroundTransparency = 1
+logoText.Size = UDim2.new(1, 0, 1, 0)
+logoText.Parent = logoContainer
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Text = "SKYFALL HUB"
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 17
+titleLabel.TextColor3 = THEME.Accent
+titleLabel.Position = UDim2.new(0, 62, 0, 8)
+titleLabel.Size = UDim2.new(1, -170, 0, 22)
+titleLabel.BackgroundTransparency = 1
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+titleLabel.Parent = header
+
+local versionLabel = Instance.new("TextLabel")
+versionLabel.Text = "v5.0 Responsive"
+versionLabel.Font = Enum.Font.Gotham
+versionLabel.TextSize = 10
+versionLabel.TextColor3 = THEME.SubText
+versionLabel.Position = UDim2.new(0, 62, 0, 32)
+versionLabel.Size = UDim2.new(1, -170, 0, 16)
+versionLabel.BackgroundTransparency = 1
+versionLabel.TextXAlignment = Enum.TextXAlignment.Left
+versionLabel.Parent = header
+
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Text = "-"
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 18
+minimizeBtn.TextColor3 = THEME.Warn
+minimizeBtn.Size = UDim2.new(0, 34, 0, 34)
+minimizeBtn.Position = UDim2.new(1, -78, 0.5, -17)
+minimizeBtn.BackgroundColor3 = THEME.Main
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Parent = header
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 8)
+minCorner.Parent = minimizeBtn
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 16
+closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+closeBtn.Size = UDim2.new(0, 34, 0, 34)
+closeBtn.Position = UDim2.new(1, -40, 0.5, -17)
+closeBtn.BackgroundColor3 = THEME.Main
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = header
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 8)
+closeCorner.Parent = closeBtn
+
+-- Content area: scale-sized against remaining panel height, no fixed offsets
+local contentArea = Instance.new("Frame")
+contentArea.Size = UDim2.new(1, 0, 1, -HEADER_HEIGHT)
+contentArea.Position = UDim2.new(0, 0, 0, HEADER_HEIGHT)
+contentArea.BackgroundColor3 = THEME.Main
+contentArea.BorderSizePixel = 0
+contentArea.Parent = mainPanel
+
+local SIDEBAR_WIDTH = 92
+local sidebar = Instance.new("ScrollingFrame")
+sidebar.Size = UDim2.new(0, SIDEBAR_WIDTH, 1, 0)
+sidebar.BackgroundColor3 = THEME.Dark
+sidebar.BorderSizePixel = 0
+sidebar.ScrollBarThickness = 3
+sidebar.ScrollBarImageColor3 = THEME.Accent
+sidebar.AutomaticCanvasSize = Enum.AutomaticSize.Y
+sidebar.CanvasSize = UDim2.new(0, 0, 0, 0)
+sidebar.Parent = contentArea
+
+local sidebarLayout = Instance.new("UIListLayout")
+sidebarLayout.Padding = UDim.new(0, 4)
+sidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+sidebarLayout.Parent = sidebar
+local sidebarPad = Instance.new("UIPadding")
+sidebarPad.PaddingTop = UDim.new(0, 6)
+sidebarPad.PaddingLeft = UDim.new(0, 4)
+sidebarPad.PaddingRight = UDim.new(0, 4)
+sidebarPad.Parent = sidebar
+
+local mainContent = Instance.new("ScrollingFrame")
+mainContent.Size = UDim2.new(1, -SIDEBAR_WIDTH, 1, 0)
+mainContent.Position = UDim2.new(0, SIDEBAR_WIDTH, 0, 0)
+mainContent.BackgroundColor3 = THEME.Main
+mainContent.BorderSizePixel = 0
+mainContent.ScrollBarThickness = 5
+mainContent.ScrollBarImageColor3 = THEME.Accent
+mainContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
+mainContent.CanvasSize = UDim2.new(0, 0, 0, 0)
+mainContent.Parent = contentArea
+
+local contentLayout = Instance.new("UIListLayout")
+contentLayout.Padding = UDim.new(0, 8)
+contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+contentLayout.Parent = mainContent
+local contentPad = Instance.new("UIPadding")
+contentPad.PaddingTop = UDim.new(0, 10)
+contentPad.PaddingLeft = UDim.new(0, 8)
+contentPad.PaddingRight = UDim.new(0, 8)
+contentPad.PaddingBottom = UDim.new(0, 16)
+contentPad.Parent = mainContent
+
+local categoryPages = {
+	{ key = "Home", label = "Home" },
+	{ key = "Combat", label = "Combat" },
+	{ key = "Misc", label = "Misc" },
+	{ key = "Player", label = "Player" },
+	{ key = "TP", label = "TP" },
+	{ key = "Visual", label = "Visual" },
+	{ key = "Prison", label = "Prison" },
+	{ key = "Evade", label = "Evade" },
+	{ key = "Info", label = "Info" }
+}
+
+local pageItems = {
+	Combat = { "God Mode", "Speed Hack" },
+	Misc = { "Tidak Ada Klip", "Inf Jump", "Fullbright", "Terbang" },
+	Player = { "ESP Player" },
+	TP = { "Teleport Home", "Teleport Spawn" },
+	Visual = { "Night Mode", "Fullbright" },
+	Prison = { "Guard Radar" },
+	Evade = { "Monster Radar" }
+}
+
+local currentPage = "Home"
+
+local function createToggleRow(name)
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(1, 0, 0, 40)
+	container.BackgroundColor3 = THEME.Dark
+	container.BorderSizePixel = 0
+	container.Parent = mainContent
+	local rowCorner = Instance.new("UICorner")
+	rowCorner.CornerRadius = UDim.new(0, 8)
+	rowCorner.Parent = container
+
+	local label = Instance.new("TextLabel")
+	label.Text = name
+	label.Font = Enum.Font.Gotham
+	label.TextSize = 13
+	label.TextColor3 = THEME.Text
+	label.Size = UDim2.new(1, -70, 1, 0)
+	label.Position = UDim2.new(0, 12, 0, 0)
+	label.BackgroundTransparency = 1
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextTruncate = Enum.TextTruncate.AtEnd
+	label.Parent = container
+
+	local toggleBg = Instance.new("Frame")
+	toggleBg.Size = UDim2.new(0, 46, 0, 22)
+	toggleBg.Position = UDim2.new(1, -56, 0.5, -11)
+	toggleBg.BackgroundColor3 = activeFeatures[name] and THEME.ToggleOn or THEME.ToggleOff
+	toggleBg.BorderSizePixel = 0
+	toggleBg.Parent = container
+	local toggleBgCorner = Instance.new("UICorner")
+	toggleBgCorner.CornerRadius = UDim.new(1, 0)
+	toggleBgCorner.Parent = toggleBg
+
+	local toggleCircle = Instance.new("Frame")
+	toggleCircle.Size = UDim2.new(0, 18, 0, 18)
+	toggleCircle.Position = activeFeatures[name] and UDim2.new(0, 26, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+	toggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	toggleCircle.BorderSizePixel = 0
+	toggleCircle.Parent = toggleBg
+	local circleCorner = Instance.new("UICorner")
+	circleCorner.CornerRadius = UDim.new(1, 0)
+	circleCorner.Parent = toggleCircle
+
+	local toggleBtn = Instance.new("TextButton")
+	toggleBtn.Size = UDim2.new(1, 0, 1, 0)
+	toggleBtn.BackgroundTransparency = 1
+	toggleBtn.Text = ""
+	toggleBtn.Parent = toggleBg
+
+	toggleBtn.MouseButton1Click:Connect(function()
+		local newState = not activeFeatures[name]
+		local fn = Features[name]
+		if fn then
+			local ok, err = pcall(fn, newState)
+			if not ok then warn("[SKYFALL] " .. name .. ": " .. tostring(err)) return end
+		end
+		toggleBg.BackgroundColor3 = newState and THEME.ToggleOn or THEME.ToggleOff
+		TweenService:Create(toggleCircle, TweenInfo.new(0.15), {
+			Position = newState and UDim2.new(0, 26, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+		}):Play()
+	end)
+end
+
+local function createActionButton(name)
+	local btn = Instance.new("TextButton")
+	btn.Text = name
+	btn.Font = Enum.Font.Gotham
+	btn.TextSize = 13
+	btn.TextColor3 = THEME.Text
+	btn.Size = UDim2.new(1, 0, 0, 40)
+	btn.BackgroundColor3 = THEME.Dark
+	btn.BorderSizePixel = 0
+	btn.Parent = mainContent
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 8)
+	btnCorner.Parent = btn
+	btn.MouseButton1Click:Connect(function()
+		local fn = Features[name]
+		if fn then
+			local ok, err = pcall(fn)
+			if not ok then warn("[SKYFALL] " .. name .. ": " .. tostring(err)) end
+		end
+	end)
+end
+
+local function clearContent()
+	for _, child in ipairs(mainContent:GetChildren()) do
+		if child:IsA("Frame") or child:IsA("TextButton") then child:Destroy() end
+	end
+end
+
+local function renderHome()
+	local statsRow = Instance.new("Frame")
+	statsRow.Size = UDim2.new(1, 0, 0, 64)
+	statsRow.BackgroundTransparency = 1
+	statsRow.LayoutOrder = 1
+	statsRow.Parent = mainContent
+	local statsLayout = Instance.new("UIGridLayout")
+	statsLayout.CellSize = UDim2.new(0.333, -6, 1, 0)
+	statsLayout.CellPadding = UDim2.new(0, 6, 0, 0)
+	statsLayout.Parent = statsRow
+
+	local pingOk, pingVal = pcall(function() return math.floor(player:GetNetworkPing() * 1000) end)
+	local stats = { { "Ping", (pingOk and tostring(pingVal) or "0") .. "ms" }, { "FPS", "60" }, { "Players", tostring(#Players:GetPlayers()) } }
+	for _, s in ipairs(stats) do
+		local stat = Instance.new("Frame")
+		stat.BackgroundColor3 = THEME.Dark
+		stat.BorderSizePixel = 0
+		stat.Parent = statsRow
+		local sc = Instance.new("UICorner") sc.CornerRadius = UDim.new(0, 8) sc.Parent = stat
+		local titleLbl = Instance.new("TextLabel")
+		titleLbl.Text = s[1]
+		titleLbl.Font = Enum.Font.Gotham
+		titleLbl.TextSize = 10
+		titleLbl.TextColor3 = THEME.SubText
+		titleLbl.Size = UDim2.new(1, 0, 0.4, 0)
+		titleLbl.Position = UDim2.new(0, 0, 0.1, 0)
+		titleLbl.BackgroundTransparency = 1
+		titleLbl.Parent = stat
+		local valLbl = Instance.new("TextLabel")
+		valLbl.Text = s[2]
+		valLbl.Font = Enum.Font.GothamBold
+		valLbl.TextSize = 15
+		valLbl.TextColor3 = THEME.Accent
+		valLbl.Position = UDim2.new(0, 0, 0.45, 0)
+		valLbl.Size = UDim2.new(1, 0, 0.5, 0)
+		valLbl.BackgroundTransparency = 1
+		valLbl.Parent = stat
+	end
+
+	local quickTitle = Instance.new("TextLabel")
+	quickTitle.Text = "Quick Actions"
+	quickTitle.Font = Enum.Font.GothamBold
+	quickTitle.TextSize = 14
+	quickTitle.TextColor3 = THEME.Accent
+	quickTitle.Size = UDim2.new(1, 0, 0, 22)
+	quickTitle.BackgroundTransparency = 1
+	quickTitle.TextXAlignment = Enum.TextXAlignment.Left
+	quickTitle.LayoutOrder = 2
+	quickTitle.Parent = mainContent
+
+	local actions = { "God Mode", "Tidak Ada Klip", "Inf Jump", "Terbang", "Fullbright", "Night Mode", "ESP Player", "Speed Hack" }
+	local actionContainer = Instance.new("Frame")
+	actionContainer.Size = UDim2.new(1, 0, 0, math.ceil(#actions / 2) * 46 - 6)
+	actionContainer.BackgroundTransparency = 1
+	actionContainer.LayoutOrder = 3
+	actionContainer.Parent = mainContent
+	local actionGrid = Instance.new("UIGridLayout")
+	actionGrid.CellSize = UDim2.new(0.5, -4, 0, 40)
+	actionGrid.CellPadding = UDim2.new(0, 6, 0, 6)
+	actionGrid.Parent = actionContainer
+
+	for _, name in ipairs(actions) do
+		local btn = Instance.new("TextButton")
+		btn.Text = name
+		btn.Font = Enum.Font.Gotham
+		btn.TextSize = 11
+		btn.TextColor3 = THEME.Text
+		btn.BackgroundColor3 = activeFeatures[name] and THEME.ToggleOn or THEME.Dark
+		btn.BorderSizePixel = 0
+		btn.Parent = actionContainer
+		local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(0, 8) bc.Parent = btn
+		btn.MouseButton1Click:Connect(function()
+			local newState = not activeFeatures[name]
+			local fn = Features[name]
+			if fn then
+				local ok = pcall(fn, newState)
+				if ok then btn.BackgroundColor3 = newState and THEME.ToggleOn or THEME.Dark end
+			end
+		end)
+	end
+end
+
+local function renderInfo()
+	local lines = {
+		"Skyfall Hub v5.0 — responsive layout, scale-based sizing",
+		"Radar reads player Team and Workspace names only",
+		"No door/lock/keycard manipulation — radar is display-only",
+		"F key toggles flight, hold ascend/descend on Misc tab"
+	}
+	for i, line in ipairs(lines) do
+		local lbl = Instance.new("TextLabel")
+		lbl.Text = line
+		lbl.Font = Enum.Font.Gotham
+		lbl.TextSize = 12
+		lbl.TextColor3 = THEME.Text
+		lbl.TextWrapped = true
+		lbl.Size = UDim2.new(1, 0, 0, 44)
+		lbl.BackgroundColor3 = THEME.Dark
+		lbl.BorderSizePixel = 0
+		lbl.LayoutOrder = i
+		lbl.Parent = mainContent
+		local lc = Instance.new("UICorner") lc.CornerRadius = UDim.new(0, 8) lc.Parent = lbl
+	end
+end
+
+local function renderPage(pageKey)
+	clearContent()
+	if pageKey == "Home" then renderHome() return end
+	if pageKey == "Info" then renderInfo() return end
+	local items = pageItems[pageKey] or {}
+	for _, itemName in ipairs(items) do
+		if itemName == "Teleport Home" or itemName == "Teleport Spawn" then
+			createActionButton(itemName)
+		else
+			createToggleRow(itemName)
+		end
+	end
+	if pageKey == "Misc" then
+		local ascendBtn = Instance.new("TextButton")
+		ascendBtn.Text = "^ Ascend (hold)"
+		ascendBtn.Font = Enum.Font.Gotham
+		ascendBtn.TextSize = 13
+		ascendBtn.TextColor3 = THEME.Text
+		ascendBtn.Size = UDim2.new(1, 0, 0, 40)
+		ascendBtn.BackgroundColor3 = THEME.Dark
+		ascendBtn.BorderSizePixel = 0
+		ascendBtn.Parent = mainContent
+		local ac = Instance.new("UICorner") ac.CornerRadius = UDim.new(0, 8) ac.Parent = ascendBtn
+		ascendBtn.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				pcall(Features["Fly Ascend"], true) ascendBtn.BackgroundColor3 = THEME.ToggleOn
+			end
+		end)
+		ascendBtn.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				pcall(Features["Fly Ascend"], false) ascendBtn.BackgroundColor3 = THEME.Dark
+			end
+		end)
+
+		local descendBtn = Instance.new("TextButton")
+		descendBtn.Text = "v Descend (hold)"
+		descendBtn.Font = Enum.Font.Gotham
+		descendBtn.TextSize = 13
+		descendBtn.TextColor3 = THEME.Text
+		descendBtn.Size = UDim2.new(1, 0, 0, 40)
+		descendBtn.BackgroundColor3 = THEME.Dark
+		descendBtn.BorderSizePixel = 0
+		descendBtn.Parent = mainContent
+		local dc = Instance.new("UICorner") dc.CornerRadius = UDim.new(0, 8) dc.Parent = descendBtn
+		descendBtn.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				pcall(Features["Fly Descend"], true) descendBtn.BackgroundColor3 = THEME.ToggleOn
+			end
+		end)
+		descendBtn.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				pcall(Features["Fly Descend"], false) descendBtn.BackgroundColor3 = THEME.Dark
+			end
+		end)
+	end
+end
+
+local sidebarButtons = {}
+for i, cat in ipairs(categoryPages) do
+	local btn = Instance.new("TextButton")
+	btn.Text = cat.label
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 11
+	btn.TextColor3 = THEME.Text
+	btn.Size = UDim2.new(1, 0, 0, 38)
+	btn.LayoutOrder = i
+	btn.BackgroundColor3 = cat.key == currentPage and THEME.Accent or THEME.Main
+	btn.BorderSizePixel = 0
+	btn.Parent = sidebar
+	local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(0, 6) bc.Parent = btn
+	sidebarButtons[cat.key] = btn
+	btn.MouseButton1Click:Connect(function()
+		currentPage = cat.key
+		for key, b in pairs(sidebarButtons) do
+			b.BackgroundColor3 = (key == currentPage) and THEME.Accent or THEME.Main
+			b.TextColor3 = (key == currentPage) and Color3.fromRGB(0, 0, 0) or THEME.Text
+		end
+		renderPage(currentPage)
+	end)
+end
+sidebarButtons["Home"].TextColor3 = Color3.fromRGB(0, 0, 0)
+
+local minimized = false
+closeBtn.MouseButton1Click:Connect(function()
+	for name in pairs(connections) do disconnectFeature(name) end
+	cleanupFlightPhysics()
+	espContainer:Destroy()
+	radarContainer:Destroy()
+	screenGui:Destroy()
+end)
+
+minimizeBtn.MouseButton1Click:Connect(function()
+	minimized = not minimized
+	contentArea.Visible = not minimized
+	mainPanel.Size = minimized and UDim2.new(0.82, 0, 0, HEADER_HEIGHT) or UDim2.new(0.82, 0, 0.72, 0)
+	minimizeBtn.Text = minimized and "+" or "-"
+end)
+
+renderPage("Home")
+print("[SKYFALL HUB] v5.0 online — responsive, radar-enabled")
