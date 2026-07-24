@@ -1,0 +1,788 @@
+-- ESP + AIMBOT + AUTOSHOOT BRUTAL v10 by Onyx
+-- Delta Executor | iPad | Android | Roblox Lua
+-- ALL IN ONE: Clean ESP, Brutal Aimbot, AutoShoot, 100% Prediction
+
+local Players        = game:GetService("Players")
+local RunService     = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = cloneref(game:GetService("VirtualInputManager"))
+local Camera         = workspace.CurrentCamera
+local LocalPlayer    = Players.LocalPlayer
+
+-------------------------------
+-- CONFIG v10
+-------------------------------
+local CFG = {
+    -- ESP
+    ESP             = true,
+    ShowEnemy       = true,
+    ShowTeam        = false,   -- team OFF by default = clean screen
+    ShowBox         = true,
+    ShowTracer      = true,
+    ShowHealth      = true,
+    ShowDistance    = true,
+    ShowChams       = true,
+    ShowHeadDot     = true,
+    ShowFOVCircle   = true,
+    ShowAimCircle   = true,
+    MaxDist         = 1500,
+    TextSize        = 12,
+
+    -- AIMBOT
+    Aimbot          = true,
+    SilentAim       = true,
+    Smooth          = 0.25,
+    AimFOV          = 200,
+    AimPart         = "Head",
+    Priority        = "Nearest",  -- "Nearest" / "LowestHP"
+
+    -- AUTOSHOOT
+    AutoShoot       = true,
+    AutoShootFOV    = 60,      -- tighter fov = only shoot when really on target
+    AutoShootDelay  = 0.08,    -- seconds between shots
+
+    -- PREDICTION
+    PredictStrength = 0.12,    -- velocity multiplier for ahead prediction
+
+    -- COLORS (clean palette)
+    EnemyColor      = Color3.fromRGB(255, 55,  55),
+    TeamColor       = Color3.fromRGB(55,  255, 100),
+    TracerColor     = Color3.fromRGB(255, 40,  40),
+    BoxColor        = Color3.fromRGB(255, 255, 255),
+    CornerColor     = Color3.fromRGB(255, 55,  55),
+    HealthLow       = Color3.fromRGB(255, 40,  40),
+    HealthHigh      = Color3.fromRGB(40,  255, 80),
+    AimTargetColor  = Color3.fromRGB(255, 220, 0),
+    PredColor       = Color3.fromRGB(0,   210, 255),
+    FOVColor        = Color3.fromRGB(255, 255, 255),
+    AimFOVColor     = Color3.fromRGB(255, 80,  80),
+    AutoShootColor  = Color3.fromRGB(255, 0,   0),
+    ChamsEnemy      = Color3.fromRGB(255, 30,  30),
+    ChamsTeam       = Color3.fromRGB(30,  255, 80),
+}
+
+-------------------------------
+-- STATE
+-------------------------------
+local ESPCache      = {}
+local currentTarget = nil
+local lastShootTime = 0
+local aimbotHeld    = false
+
+-------------------------------
+-- UTILITY
+-------------------------------
+local function toScreen(pos)
+    local s, vis = Camera:WorldToViewportPoint(pos)
+    return Vector2.new(s.X, s.Y), vis, s.Z
+end
+
+local function screenMid()
+    return Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+end
+
+local function worldDist(pos)
+    local c = LocalPlayer.Character
+    if not c then return math.huge end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not hrp then return math.huge end
+    return (hrp.Position - pos).Magnitude
+end
+
+local function isEnemy(p)
+    if not LocalPlayer.Team or not p.Team then return true end
+    return p.Team ~= LocalPlayer.Team
+end
+
+local function lerpColor(a, b, t)
+    return Color3.new(
+        a.R + (b.R - a.R) * t,
+        a.G + (b.G - a.G) * t,
+        a.B + (b.B - a.B) * t
+    )
+end
+
+local function newDraw(t, props)
+    local o = Drawing.new(t)
+    for k,v in pairs(props) do o[k] = v end
+    return o
+end
+
+-------------------------------
+-- PREDICTION ENGINE
+-------------------------------
+local prevPos = {}
+local prevTime = {}
+
+local function getPredicted(player)
+    local char = player.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local now = tick()
+    local vel = hrp.AssemblyLinearVelocity
+
+    -- Use velocity + frame delta for smoother prediction
+    local dt = now - (prevTime[player] or now)
+    local predicted = hrp.Position + vel * CFG.PredictStrength
+
+    -- Lead target based on distance to camera
+    local camDist = (Camera.CFrame.Position - hrp.Position).Magnitude
+    local bulletTravelTime = camDist / 800  -- assume ~800 stud/s projectile
+    local leadPos = hrp.Position + vel * bulletTravelTime
+
+    prevPos[player]  = hrp.Position
+    prevTime[player] = now
+
+    local offset = CFG.AimPart == "Head" and Vector3.new(0, 1.5, 0) or Vector3.new(0, 0, 0)
+    return leadPos + offset
+end
+
+-------------------------------
+-- CHAMS
+-------------------------------
+local function applyChams(char, color)
+    for _, p in pairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and not p:FindFirstChild("ESPCham") then
+            local h = Instance.new("SelectionBox")
+            h.Name            = "ESPCham"
+            h.Color3          = color
+            h.LineThickness   = 0.02
+            h.SurfaceTransparency = 0.6
+            h.SurfaceColor3   = color
+            h.Adornee         = p
+            h.Parent          = p
+        end
+    end
+end
+
+local function clearChams(char)
+    if not char then return end
+    for _, d in pairs(char:GetDescendants()) do
+        if d.Name == "ESPCham" then d:Destroy() end
+    end
+end
+
+-------------------------------
+-- ESP OBJECTS
+-------------------------------
+local function makeESP(player)
+    if ESPCache[player] then return end
+    ESPCache[player] = {
+        -- Name + labels
+        Name    = newDraw("Text",{Text="",Size=CFG.TextSize,Font=2,Color=CFG.EnemyColor,Outline=true,OutlineColor=Color3.fromRGB(0,0,0),Visible=false}),
+        HpTxt   = newDraw("Text",{Text="",Size=CFG.TextSize-1,Font=2,Color=CFG.HealthHigh,Outline=true,OutlineColor=Color3.fromRGB(0,0,0),Visible=false}),
+        Dist    = newDraw("Text",{Text="",Size=CFG.TextSize-2,Font=2,Color=Color3.fromRGB(180,180,180),Outline=true,OutlineColor=Color3.fromRGB(0,0,0),Visible=false}),
+        AimLbl  = newDraw("Text",{Text="◎ TARGET",Size=CFG.TextSize,Font=2,Color=CFG.AimTargetColor,Outline=true,OutlineColor=Color3.fromRGB(0,0,0),Visible=false}),
+        -- Box (shadow + color)
+        BTs = newDraw("Line",{Thickness=3,Color=Color3.fromRGB(0,0,0),Visible=false}),
+        BBs = newDraw("Line",{Thickness=3,Color=Color3.fromRGB(0,0,0),Visible=false}),
+        BLs = newDraw("Line",{Thickness=3,Color=Color3.fromRGB(0,0,0),Visible=false}),
+        BRs = newDraw("Line",{Thickness=3,Color=Color3.fromRGB(0,0,0),Visible=false}),
+        BT  = newDraw("Line",{Thickness=1,Color=CFG.BoxColor,Visible=false}),
+        BB  = newDraw("Line",{Thickness=1,Color=CFG.BoxColor,Visible=false}),
+        BL  = newDraw("Line",{Thickness=1,Color=CFG.BoxColor,Visible=false}),
+        BR  = newDraw("Line",{Thickness=1,Color=CFG.BoxColor,Visible=false}),
+        -- Corner accents x4 corners x2 lines
+        C = {},
+        -- Health bar
+        HpBG = newDraw("Line",{Thickness=4,Color=Color3.fromRGB(15,15,15),Visible=false}),
+        HpFG = newDraw("Line",{Thickness=3,Color=CFG.HealthHigh,Visible=false}),
+        -- Single clean tracer
+        Tracer  = newDraw("Line",{Thickness=1.2,Color=CFG.TracerColor,Visible=false}),
+        -- Head dot
+        HDot    = newDraw("Circle",{Radius=3,Thickness=1,Color=CFG.EnemyColor,Filled=true,Visible=false}),
+        -- Prediction dot
+        PDot    = newDraw("Circle",{Radius=5,Thickness=1.5,Color=CFG.PredColor,Filled=false,Visible=false}),
+    }
+    -- Build 8 corner lines
+    for i=1,8 do
+        ESPCache[player].C[i] = newDraw("Line",{Thickness=2.5,Color=CFG.CornerColor,Visible=false})
+    end
+end
+
+local function killESP(player)
+    local e = ESPCache[player]
+    if not e then return end
+    for _,o in pairs(e) do
+        if type(o) == "userdata" then pcall(function() o:Remove() end) end
+    end
+    for _,o in pairs(e.C or {}) do pcall(function() o:Remove() end) end
+    ESPCache[player] = nil
+    clearChams(player.Character)
+end
+
+-------------------------------
+-- DRAW CORNER BOX
+-------------------------------
+local function drawBox(e, bx, by, bw, bh, color, isTarget)
+    local tc = isTarget and CFG.AimTargetColor or color
+    local function setLine(l, x1,y1,x2,y2,c,th)
+        l.From=Vector2.new(x1,y1) l.To=Vector2.new(x2,y2)
+        l.Color=c l.Thickness=th or 1 l.Visible=true
+    end
+    -- Shadow
+    setLine(e.BTs,bx,by,bx+bw,by,Color3.fromRGB(0,0,0),3)
+    setLine(e.BBs,bx,by+bh,bx+bw,by+bh,Color3.fromRGB(0,0,0),3)
+    setLine(e.BLs,bx,by,bx,by+bh,Color3.fromRGB(0,0,0),3)
+    setLine(e.BRs,bx+bw,by,bx+bw,by+bh,Color3.fromRGB(0,0,0),3)
+    -- Box
+    setLine(e.BT,bx,by,bx+bw,by,Color3.fromRGB(255,255,255))
+    setLine(e.BB,bx,by+bh,bx+bw,by+bh,Color3.fromRGB(255,255,255))
+    setLine(e.BL,bx,by,bx,by+bh,Color3.fromRGB(255,255,255))
+    setLine(e.BR,bx+bw,by,bx+bw,by+bh,Color3.fromRGB(255,255,255))
+    -- Corners
+    local cw,ch = bw*0.3, bh*0.3
+    local pts = {
+        {bx,by,cw,ch},
+        {bx+bw,by,-cw,ch},
+        {bx,by+bh,cw,-ch},
+        {bx+bw,by+bh,-cw,-ch},
+    }
+    for i,pt in ipairs(pts) do
+        local idx = (i-1)*2
+        e.C[idx+1].From=Vector2.new(pt[1],pt[2]) e.C[idx+1].To=Vector2.new(pt[1]+pt[3],pt[2]) e.C[idx+1].Color=tc e.C[idx+1].Visible=true
+        e.C[idx+2].From=Vector2.new(pt[1],pt[2]) e.C[idx+2].To=Vector2.new(pt[1],pt[2]+pt[4]) e.C[idx+2].Color=tc e.C[idx+2].Visible=true
+    end
+end
+
+local function hideBox(e)
+    for _,k in pairs({"BTs","BBs","BLs","BRs","BT","BB","BL","BR"}) do e[k].Visible=false end
+    for _,l in pairs(e.C) do l.Visible=false end
+end
+
+-------------------------------
+-- AIMBOT TARGET SELECTOR
+-------------------------------
+local function getBestTarget()
+    local sc = screenMid()
+    local best, bestScore = nil, math.huge
+
+    for _, p in pairs(Players:GetPlayers()) do
+        if p == LocalPlayer then continue end
+        if not isEnemy(p) then continue end
+        local char = p.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if not char or not hum or not hrp or hum.Health <= 0 then continue end
+
+        local d = worldDist(hrp.Position)
+        if d > CFG.MaxDist then continue end
+
+        local predicted = getPredicted(p)
+        if not predicted then continue end
+        local sp, onScreen = toScreen(predicted)
+        if not onScreen then continue end
+
+        local screenDist = (sp - sc).Magnitude
+        if screenDist > CFG.AimFOV then continue end
+
+        local score = CFG.Priority == "LowestHP" and hum.Health or screenDist
+        if score < bestScore then
+            bestScore = score
+            best = p
+        end
+    end
+    return best
+end
+
+-------------------------------
+-- AUTOSHOOT ENGINE
+-------------------------------
+local function tryAutoShoot(target)
+    if not CFG.AutoShoot then return end
+    if not target then return end
+    local now = tick()
+    if now - lastShootTime < CFG.AutoShootDelay then return end
+
+    local predicted = getPredicted(target)
+    if not predicted then return end
+    local sp, onScreen = toScreen(predicted)
+    if not onScreen then return end
+
+    local sc = screenMid()
+    local d  = (sp - sc).Magnitude
+    if d > CFG.AutoShootFOV then return end
+
+    -- Simulate tap/click at screen center (where aimbot already moved camera)
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(
+            math.floor(sc.X), math.floor(sc.Y),
+            0, true, game, 0
+        )
+        task.delay(0.04, function()
+            VirtualInputManager:SendMouseButtonEvent(
+                math.floor(sc.X), math.floor(sc.Y),
+                0, false, game, 0
+            )
+        end)
+    end)
+    lastShootTime = now
+end
+
+-------------------------------
+-- AIMBOT ENGINE
+-------------------------------
+local function doAimbot(target)
+    if not CFG.Aimbot or not target then return end
+    if not aimbotHeld and not CFG.SilentAim then return end
+
+    local predicted = getPredicted(target)
+    if not predicted then return end
+
+    local camCF  = Camera.CFrame
+    local dir    = (predicted - camCF.Position).Unit
+    local tgtCF  = CFrame.new(camCF.Position, camCF.Position + dir)
+    Camera.CFrame = camCF:Lerp(tgtCF, CFG.Smooth)
+end
+
+-------------------------------
+-- ESP UPDATE
+-------------------------------
+local function updateESP()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        local e = ESPCache[player]
+        if not e then continue end
+
+        local char = player.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local head = char and char:FindFirstChild("Head")
+
+        -- Hide all if dead/missing
+        if not CFG.ESP or not char or not hrp or not hum or hum.Health <= 0 then
+            for k,o in pairs(e) do
+                if type(o)=="userdata" then o.Visible=false end
+            end
+            for _,l in pairs(e.C) do l.Visible=false end
+            continue
+        end
+
+        local enemy = isEnemy(player)
+        if (enemy and not CFG.ShowEnemy) or (not enemy and not CFG.ShowTeam) then
+            for k,o in pairs(e) do
+                if type(o)=="userdata" then o.Visible=false end
+            end
+            for _,l in pairs(e.C) do l.Visible=false end
+            continue
+        end
+
+        local d = worldDist(hrp.Position)
+        if d > CFG.MaxDist then
+            for k,o in pairs(e) do
+                if type(o)=="userdata" then o.Visible=false end
+            end
+            for _,l in pairs(e.C) do l.Visible=false end
+            continue
+        end
+
+        local color    = enemy and CFG.EnemyColor or CFG.TeamColor
+        local isTarget = currentTarget == player
+        local dispColor = isTarget and CFG.AimTargetColor or color
+
+        local headPos  = head and head.Position or hrp.Position + Vector3.new(0,1.5,0)
+        local footPos  = hrp.Position - Vector3.new(0,3,0)
+
+        local headSP, onScreen = toScreen(headPos)
+        local footSP           = toScreen(footPos)
+
+        if not onScreen then
+            for k,o in pairs(e) do
+                if type(o)=="userdata" then o.Visible=false end
+            end
+            for _,l in pairs(e.C) do l.Visible=false end
+            continue
+        end
+
+        local bh = math.max(math.abs(footSP.Y - headSP.Y), 10)
+        local bw = bh * 0.55
+        local bx = headSP.X - bw/2
+        local by = headSP.Y
+        local hpRatio = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+        local hpColor = lerpColor(CFG.HealthLow, CFG.HealthHigh, hpRatio)
+
+        -- Name
+        local tag = enemy and " [ENEMY]" or " [TEAM]"
+        e.Name.Text     = player.Name .. tag
+        e.Name.Color    = dispColor
+        e.Name.Position = Vector2.new(headSP.X, by - 18)
+        e.Name.Visible  = true
+
+        -- Target label
+        e.AimLbl.Visible  = isTarget
+        e.AimLbl.Position = Vector2.new(headSP.X, by - 30)
+
+        -- Health text
+        if CFG.ShowHealth then
+            e.HpTxt.Text     = "♥ "..math.floor(hum.Health).."/"..math.floor(hum.MaxHealth)
+            e.HpTxt.Color    = hpColor
+            e.HpTxt.Position = Vector2.new(headSP.X, by - 5)
+            e.HpTxt.Visible  = true
+        else e.HpTxt.Visible = false end
+
+        -- Distance
+        if CFG.ShowDistance then
+            e.Dist.Text     = math.floor(d).."m"
+            e.Dist.Position = Vector2.new(headSP.X, footSP.Y + 3)
+            e.Dist.Visible  = true
+        else e.Dist.Visible = false end
+
+        -- Box
+        if CFG.ShowBox then
+            drawBox(e, bx, by, bw, bh, color, isTarget)
+        else hideBox(e) end
+
+        -- Health bar
+        if CFG.ShowHealth then
+            local barX = bx - 7
+            e.HpBG.From=Vector2.new(barX,by)
+            e.HpBG.To  =Vector2.new(barX,by+bh)
+            e.HpBG.Visible=true
+            e.HpFG.From=Vector2.new(barX,by+bh)
+            e.HpFG.To  =Vector2.new(barX,by+bh-(bh*hpRatio))
+            e.HpFG.Color=hpColor
+            e.HpFG.Visible=true
+        else e.HpBG.Visible=false e.HpFG.Visible=false end
+
+        -- SINGLE CLEAN TRACER (enemy only, from bottom-center screen to foot)
+        if CFG.ShowTracer and enemy then
+            e.Tracer.From    = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+            e.Tracer.To      = footSP
+            e.Tracer.Color   = isTarget and CFG.AimTargetColor or CFG.TracerColor
+            e.Tracer.Thickness = isTarget and 1.5 or 1
+            e.Tracer.Visible = true
+        else e.Tracer.Visible = false end
+
+        -- Head dot
+        if CFG.ShowHeadDot then
+            e.HDot.Position = headSP
+            e.HDot.Color    = dispColor
+            e.HDot.Visible  = true
+        else e.HDot.Visible = false end
+
+        -- Prediction dot on target only
+        if isTarget then
+            local pred = getPredicted(player)
+            if pred then
+                local psp, pon = toScreen(pred)
+                e.PDot.Position = psp
+                e.PDot.Visible  = pon
+            end
+        else e.PDot.Visible = false end
+
+        -- Chams
+        if CFG.ShowChams and enemy then
+            pcall(function()
+                local chamColor = isTarget and CFG.AimTargetColor or CFG.ChamsEnemy
+                clearChams(char)
+                applyChams(char, chamColor)
+            end)
+        end
+    end
+end
+
+-------------------------------
+-- FOV + AIM CIRCLES (single, clean)
+-------------------------------
+local fovCircle = newDraw("Circle",{
+    Radius=150,Color=CFG.FOVColor,Thickness=0.8,Filled=false,Visible=true
+})
+local aimCircle = newDraw("Circle",{
+    Radius=CFG.AutoShootFOV,Color=CFG.AutoShootColor,Thickness=0.8,Filled=false,Visible=true
+})
+local aimFovCircle = newDraw("Circle",{
+    Radius=CFG.AimFOV,Color=CFG.AimFOVColor,Thickness=0.6,Filled=false,Visible=true
+})
+
+-------------------------------
+-- MAIN LOOP
+-------------------------------
+RunService.RenderStepped:Connect(function()
+    local sc = screenMid()
+
+    -- Update circles
+    if CFG.ShowFOVCircle then
+        fovCircle.Position = sc
+        fovCircle.Visible  = true
+    else fovCircle.Visible = false end
+
+    if CFG.ShowAimCircle then
+        aimCircle.Position    = sc
+        aimCircle.Radius      = CFG.AutoShootFOV
+        aimCircle.Visible     = true
+        aimFovCircle.Position = sc
+        aimFovCircle.Radius   = CFG.AimFOV
+        aimFovCircle.Visible  = true
+    else
+        aimCircle.Visible    = false
+        aimFovCircle.Visible = false
+    end
+
+    -- Get target
+    currentTarget = getBestTarget()
+
+    -- Run aimbot
+    doAimbot(currentTarget)
+
+    -- AutoShoot
+    if CFG.AutoShoot then
+        tryAutoShoot(currentTarget)
+    end
+
+    -- ESP
+    if CFG.ESP then updateESP() end
+end)
+
+-------------------------------
+-- INPUT (hold for manual aim)
+-------------------------------
+UserInputService.InputBegan:Connect(function(i, gpe)
+    if gpe then return end
+    if i.UserInputType == Enum.UserInputType.MouseButton2
+    or i.UserInputType == Enum.UserInputType.Touch then
+        aimbotHeld = true
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton2
+    or i.UserInputType == Enum.UserInputType.Touch then
+        aimbotHeld = false
+    end
+end)
+
+-------------------------------
+-- PREMIUM PANEL v10
+-------------------------------
+local function buildPanel()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "v10"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local UIS = UserInputService
+    local drag, dStart, dOrigin
+
+    local main = Instance.new("Frame")
+    main.Size = UDim2.new(0, 240, 0, 580)
+    main.Position = UDim2.new(0, 8, 0, 8)
+    main.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+    main.BorderSizePixel = 0
+    main.Active = true
+    main.Parent = gui
+    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
+    local stroke = Instance.new("UIStroke", main)
+    stroke.Color = Color3.fromRGB(200, 0, 0)
+    stroke.Thickness = 1.5
+
+    -- Title bar
+    local tbar = Instance.new("Frame")
+    tbar.Size = UDim2.new(1, 0, 0, 36)
+    tbar.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    tbar.BorderSizePixel = 0
+    tbar.Parent = main
+    Instance.new("UICorner", tbar).CornerRadius = UDim.new(0, 10)
+
+    tbar.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+            drag=true dStart=i.Position dOrigin=main.Position
+        end
+    end)
+    UIS.InputChanged:Connect(function(i)
+        if drag and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
+            local d=i.Position-dStart
+            main.Position=UDim2.new(dOrigin.X.Scale,dOrigin.X.Offset+d.X,dOrigin.Y.Scale,dOrigin.Y.Offset+d.Y)
+        end
+    end)
+    UIS.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag=false end
+    end)
+
+    local ttxt = Instance.new("TextLabel")
+    ttxt.Text="⚡ ALL IN ONE v10"
+    ttxt.Size=UDim2.new(1,-72,1,0)
+    ttxt.Position=UDim2.new(0,10,0,0)
+    ttxt.BackgroundTransparency=1
+    ttxt.TextColor3=Color3.fromRGB(255,255,255)
+    ttxt.Font=Enum.Font.GothamBold
+    ttxt.TextSize=13
+    ttxt.TextXAlignment=Enum.TextXAlignment.Left
+    ttxt.Parent=tbar
+
+    local function hdrBtn(txt, xoff, bg)
+        local b=Instance.new("TextButton")
+        b.Text=txt b.Size=UDim2.new(0,28,0,24)
+        b.Position=UDim2.new(1,xoff,0,6)
+        b.BackgroundColor3=bg
+        b.TextColor3=Color3.fromRGB(255,255,255)
+        b.Font=Enum.Font.GothamBold b.TextSize=14
+        b.Parent=tbar
+        Instance.new("UICorner",b).CornerRadius=UDim.new(0,5)
+        return b
+    end
+    local minBtn   = hdrBtn("−",-60,Color3.fromRGB(100,100,0))
+    local closeBtn = hdrBtn("✕",-30,Color3.fromRGB(170,20,20))
+
+    -- Scroll content
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size=UDim2.new(1,0,1,-36)
+    scroll.Position=UDim2.new(0,0,0,36)
+    scroll.BackgroundTransparency=1
+    scroll.ScrollBarThickness=3
+    scroll.ScrollBarImageColor3=Color3.fromRGB(180,0,0)
+    scroll.CanvasSize=UDim2.new(0,0,0,0)
+    scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
+    scroll.Parent=main
+
+    local ll=Instance.new("UIListLayout")
+    ll.Padding=UDim.new(0,4)
+    ll.Parent=scroll
+    local pp=Instance.new("UIPadding")
+    pp.PaddingLeft=UDim.new(0,8)
+    pp.PaddingRight=UDim.new(0,8)
+    pp.PaddingTop=UDim.new(0,6)
+    pp.Parent=scroll
+
+    local function sec(txt)
+        local l=Instance.new("TextLabel")
+        l.Text=txt l.Size=UDim2.new(1,0,0,20)
+        l.BackgroundColor3=Color3.fromRGB(25,25,30)
+        l.TextColor3=Color3.fromRGB(160,160,160)
+        l.Font=Enum.Font.GothamBold l.TextSize=10
+        l.Parent=scroll
+        Instance.new("UICorner",l).CornerRadius=UDim.new(0,4)
+    end
+
+    local function tog(lbl, key, onClr)
+        local f=Instance.new("Frame")
+        f.Size=UDim2.new(1,0,0,30) f.BackgroundTransparency=1 f.Parent=scroll
+        local b=Instance.new("TextButton")
+        b.Size=UDim2.new(1,0,1,0)
+        b.BackgroundColor3=CFG[key] and (onClr or Color3.fromRGB(0,120,0)) or Color3.fromRGB(45,45,50)
+        b.TextColor3=Color3.fromRGB(255,255,255)
+        b.Font=Enum.Font.GothamBold b.TextSize=11
+        b.Text=lbl.."  "..(CFG[key] and "● ON" or "○ OFF")
+        b.Parent=f
+        Instance.new("UICorner",b).CornerRadius=UDim.new(0,6)
+        b.MouseButton1Click:Connect(function()
+            CFG[key]=not CFG[key]
+            b.Text=lbl.."  "..(CFG[key] and "● ON" or "○ OFF")
+            b.BackgroundColor3=CFG[key] and (onClr or Color3.fromRGB(0,120,0)) or Color3.fromRGB(45,45,50)
+        end)
+    end
+
+    local function sld(lbl, key, mn, mx, isFloat)
+        local f=Instance.new("Frame")
+        f.Size=UDim2.new(1,0,0,42)
+        f.BackgroundColor3=Color3.fromRGB(18,18,22) f.Parent=scroll
+        Instance.new("UICorner",f).CornerRadius=UDim.new(0,6)
+        local lv=Instance.new("TextLabel")
+        local function fmtVal(v) return isFloat and string.format("%.2f",v) or tostring(v) end
+        lv.Text=lbl..": "..fmtVal(CFG[key])
+        lv.Size=UDim2.new(1,-8,0,18) lv.Position=UDim2.new(0,8,0,2)
+        lv.BackgroundTransparency=1
+        lv.TextColor3=Color3.fromRGB(200,200,200)
+        lv.Font=Enum.Font.Gotham lv.TextSize=10
+        lv.TextXAlignment=Enum.TextXAlignment.Left lv.Parent=f
+        local trk=Instance.new("Frame")
+        trk.Size=UDim2.new(1,-16,0,6) trk.Position=UDim2.new(0,8,0,28)
+        trk.BackgroundColor3=Color3.fromRGB(40,40,45) trk.Parent=f
+        Instance.new("UICorner",trk).CornerRadius=UDim.new(1,0)
+        local fill=Instance.new("Frame")
+        fill.Size=UDim2.new((CFG[key]-mn)/(mx-mn),0,1,0)
+        fill.BackgroundColor3=Color3.fromRGB(200,0,0) fill.Parent=trk
+        Instance.new("UICorner",fill).CornerRadius=UDim.new(1,0)
+        local sl=false
+        trk.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then sl=true end end)
+        UIS.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then sl=false end end)
+        UIS.InputChanged:Connect(function(i)
+            if sl and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
+                local r=math.clamp((i.Position.X-trk.AbsolutePosition.X)/trk.AbsoluteSize.X,0,1)
+                local v=isFloat and (mn+r*(mx-mn)) or math.floor(mn+r*(mx-mn))
+                if isFloat then v=math.floor(v*100)/100 end
+                CFG[key]=v fill.Size=UDim2.new(r,0,1,0) lv.Text=lbl..": "..fmtVal(v)
+            end
+        end)
+    end
+
+    local function cycleBtn(lbl, key, opts)
+        local f=Instance.new("Frame")
+        f.Size=UDim2.new(1,0,0,30) f.BackgroundTransparency=1 f.Parent=scroll
+        local b=Instance.new("TextButton")
+        b.Size=UDim2.new(1,0,1,0)
+        b.BackgroundColor3=Color3.fromRGB(70,0,100)
+        b.TextColor3=Color3.fromRGB(255,255,255)
+        b.Font=Enum.Font.GothamBold b.TextSize=11
+        b.Text=lbl..": "..CFG[key] b.Parent=f
+        Instance.new("UICorner",b).CornerRadius=UDim.new(0,6)
+        b.MouseButton1Click:Connect(function()
+            local idx=table.find(opts,CFG[key]) or 1
+            CFG[key]=opts[(idx%#opts)+1]
+            b.Text=lbl..": "..CFG[key]
+        end)
+    end
+
+    -- Build panel
+    sec("  ── ESP ──")
+    tog("ESP Master",     "ESP",           Color3.fromRGB(200,0,0))
+    tog("Enemy ESP",      "ShowEnemy",     Color3.fromRGB(180,30,30))
+    tog("Team ESP",       "ShowTeam",      Color3.fromRGB(0,130,50))
+    tog("Box ESP",        "ShowBox",       Color3.fromRGB(50,50,180))
+    tog("Tracers",        "ShowTracer",    Color3.fromRGB(180,60,0))
+    tog("Health",         "ShowHealth",    Color3.fromRGB(0,150,60))
+    tog("Distance",       "ShowDistance",  Color3.fromRGB(60,60,70))
+    tog("Chams",          "ShowChams",     Color3.fromRGB(140,0,140))
+    tog("Head Dot",       "ShowHeadDot",   Color3.fromRGB(200,40,40))
+    tog("FOV Circle",     "ShowFOVCircle", Color3.fromRGB(60,60,70))
+    tog("Aim Circles",    "ShowAimCircle", Color3.fromRGB(60,60,70))
+
+    sec("  ── AIMBOT ──")
+    tog("Aimbot",         "Aimbot",        Color3.fromRGB(200,0,0))
+    tog("Silent Aim",     "SilentAim",     Color3.fromRGB(110,0,150))
+    cycleBtn("Priority",  "Priority",      {"Nearest","LowestHP"})
+    sld("Smooth",         "Smooth",        0.02, 0.5, true)
+    sld("Aim FOV",        "AimFOV",        30,   500)
+    sld("Predict",        "PredictStrength",0.0, 0.3, true)
+
+    sec("  ── AUTOSHOOT ──")
+    tog("Auto Shoot",     "AutoShoot",     Color3.fromRGB(200,0,0))
+    sld("Shoot FOV",      "AutoShootFOV",  10,   200)
+    sld("Shoot Delay",    "AutoShootDelay",0.02, 0.5, true)
+
+    sec("  ── RANGE ──")
+    sld("Max Distance",   "MaxDist",       100,  2000)
+
+    -- Minimize
+    local minimized=false
+    minBtn.MouseButton1Click:Connect(function()
+        minimized=not minimized
+        scroll.Visible=not minimized
+        main.Size=minimized and UDim2.new(0,240,0,36) or UDim2.new(0,240,0,580)
+        minBtn.Text=minimized and "+" or "−"
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        CFG.ESP=false CFG.Aimbot=false CFG.AutoShoot=false
+        fovCircle.Visible=false aimCircle.Visible=false aimFovCircle.Visible=false
+        gui:Destroy()
+    end)
+end
+
+-------------------------------
+-- INIT
+-------------------------------
+for _,p in pairs(Players:GetPlayers()) do
+    if p~=LocalPlayer then makeESP(p) end
+end
+Players.PlayerAdded:Connect(function(p)
+    makeESP(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(0.5) makeESP(p)
+    end)
+end)
+Players.PlayerRemoving:Connect(killESP)
+
+buildPanel()
