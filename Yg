@@ -1,0 +1,322 @@
+-- ESP Premium v2 by Onyx
+-- Delta Executor Compatible | iPad | Android
+-- Features: Enemy/Team detection, Health bar, Distance, Tracers, Box ESP, Admin Panel
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+
+local LocalPlayer = Players.LocalPlayer
+
+-- CONFIG
+local CONFIG = {
+    Enabled = true,
+    ShowEnemy = true,
+    ShowTeam = true,
+    ShowDistance = true,
+    ShowHealth = true,
+    ShowTracers = true,
+    ShowBox = true,
+    MaxDistance = 500,
+    EnemyColor = Color3.fromRGB(255, 50, 50),
+    TeamColor = Color3.fromRGB(50, 255, 100),
+    TracerColor = Color3.fromRGB(255, 200, 0),
+    BoxColor = Color3.fromRGB(255, 255, 255),
+    HealthBarColor = Color3.fromRGB(0, 255, 80),
+    TextSize = 13,
+}
+
+local ESPObjects = {}
+
+-- Drawing API (Delta supported)
+local function newDraw(type, props)
+    local obj = Drawing.new(type)
+    for k, v in pairs(props) do obj[k] = v end
+    return obj
+end
+
+local function getScreenPos(pos)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen, screenPos.Z
+end
+
+local function getDistance(pos)
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return 0 end
+    return math.floor((char.HumanoidRootPart.Position - pos).Magnitude)
+end
+
+local function isEnemy(player)
+    if not LocalPlayer.Team or not player.Team then return true end
+    return player.Team ~= LocalPlayer.Team
+end
+
+local function createESP(player)
+    local esp = {
+        Name = newDraw("Text", {
+            Text = "",
+            Size = CONFIG.TextSize,
+            Font = 2,
+            Color = CONFIG.EnemyColor,
+            Outline = true,
+            OutlineColor = Color3.fromRGB(0,0,0),
+            Visible = false,
+        }),
+        Health = newDraw("Text", {
+            Text = "",
+            Size = CONFIG.TextSize - 2,
+            Font = 2,
+            Color = CONFIG.HealthBarColor,
+            Outline = true,
+            OutlineColor = Color3.fromRGB(0,0,0),
+            Visible = false,
+        }),
+        Distance = newDraw("Text", {
+            Text = "",
+            Size = CONFIG.TextSize - 2,
+            Font = 2,
+            Color = Color3.fromRGB(255,255,255),
+            Outline = true,
+            OutlineColor = Color3.fromRGB(0,0,0),
+            Visible = false,
+        }),
+        BoxTop = newDraw("Line", {Thickness = 1.5, Color = CONFIG.BoxColor, Visible = false}),
+        BoxBottom = newDraw("Line", {Thickness = 1.5, Color = CONFIG.BoxColor, Visible = false}),
+        BoxLeft = newDraw("Line", {Thickness = 1.5, Color = CONFIG.BoxColor, Visible = false}),
+        BoxRight = newDraw("Line", {Thickness = 1.5, Color = CONFIG.BoxColor, Visible = false}),
+        Tracer = newDraw("Line", {
+            Thickness = 1,
+            Color = CONFIG.TracerColor,
+            Visible = false,
+        }),
+    }
+    ESPObjects[player] = esp
+end
+
+local function removeESP(player)
+    if ESPObjects[player] then
+        for _, obj in pairs(ESPObjects[player]) do
+            obj:Remove()
+        end
+        ESPObjects[player] = nil
+    end
+end
+
+local function updateESP()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+
+        local esp = ESPObjects[player]
+        if not esp then continue end
+
+        local char = player.Character
+        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local head = char and char:FindFirstChild("Head")
+
+        if not CONFIG.Enabled or not char or not hrp or not humanoid or humanoid.Health <= 0 then
+            for _, obj in pairs(esp) do obj.Visible = false end
+            continue
+        end
+
+        local enemy = isEnemy(player)
+        if enemy and not CONFIG.ShowEnemy then
+            for _, obj in pairs(esp) do obj.Visible = false end
+            continue
+        end
+        if not enemy and not CONFIG.ShowTeam then
+            for _, obj in pairs(esp) do obj.Visible = false end
+            continue
+        end
+
+        local dist = getDistance(hrp.Position)
+        if dist > CONFIG.MaxDistance then
+            for _, obj in pairs(esp) do obj.Visible = false end
+            continue
+        end
+
+        local color = enemy and CONFIG.EnemyColor or CONFIG.TeamColor
+        local tag = enemy and "[ENEMY]" or "[TEAM]"
+
+        -- Head position
+        local headPos, onScreen = getScreenPos(hrp.Position + Vector3.new(0, 3, 0))
+        local footPos = getScreenPos(hrp.Position - Vector3.new(0, 3, 0))
+
+        if not onScreen then
+            for _, obj in pairs(esp) do obj.Visible = false end
+            continue
+        end
+
+        -- Name + tag
+        esp.Name.Text = player.Name .. " " .. tag
+        esp.Name.Color = color
+        esp.Name.Position = Vector2.new(headPos.X, headPos.Y - 18)
+        esp.Name.Visible = true
+
+        -- Health
+        if CONFIG.ShowHealth then
+            local hp = math.floor(humanoid.Health)
+            local maxhp = math.floor(humanoid.MaxHealth)
+            esp.Health.Text = "HP: " .. hp .. "/" .. maxhp
+            esp.Health.Position = Vector2.new(headPos.X, headPos.Y - 5)
+            esp.Health.Visible = true
+        else
+            esp.Health.Visible = false
+        end
+
+        -- Distance
+        if CONFIG.ShowDistance then
+            esp.Distance.Text = dist .. "m"
+            esp.Distance.Position = Vector2.new(headPos.X, footPos.Y + 2)
+            esp.Distance.Visible = true
+        else
+            esp.Distance.Visible = false
+        end
+
+        -- Box ESP
+        if CONFIG.ShowBox then
+            local boxW = math.abs(headPos.X - footPos.X) + 20
+            local boxH = math.abs(headPos.Y - footPos.Y)
+            local left = headPos.X - boxW / 2
+            local right = headPos.X + boxW / 2
+            local top = headPos.Y
+            local bottom = footPos.Y
+
+            esp.BoxTop.From = Vector2.new(left, top)
+            esp.BoxTop.To = Vector2.new(right, top)
+            esp.BoxTop.Color = color
+            esp.BoxTop.Visible = true
+
+            esp.BoxBottom.From = Vector2.new(left, bottom)
+            esp.BoxBottom.To = Vector2.new(right, bottom)
+            esp.BoxBottom.Color = color
+            esp.BoxBottom.Visible = true
+
+            esp.BoxLeft.From = Vector2.new(left, top)
+            esp.BoxLeft.To = Vector2.new(left, bottom)
+            esp.BoxLeft.Color = color
+            esp.BoxLeft.Visible = true
+
+            esp.BoxRight.From = Vector2.new(right, top)
+            esp.BoxRight.To = Vector2.new(right, bottom)
+            esp.BoxRight.Color = color
+            esp.BoxRight.Visible = true
+        else
+            esp.BoxTop.Visible = false
+            esp.BoxBottom.Visible = false
+            esp.BoxLeft.Visible = false
+            esp.BoxRight.Visible = false
+        end
+
+        -- Tracer
+        if CONFIG.ShowTracers then
+            local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+            esp.Tracer.From = screenCenter
+            esp.Tracer.To = footPos
+            esp.Tracer.Color = color
+            esp.Tracer.Visible = true
+        else
+            esp.Tracer.Visible = false
+        end
+    end
+end
+
+-- Admin Panel UI
+local function buildPanel()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "ESPPremiumPanel"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 220, 0, 320)
+    frame.Position = UDim2.new(0, 8, 0, 8)
+    frame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+    frame.BorderSizePixel = 0
+    frame.Parent = gui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+
+    local title = Instance.new("TextLabel")
+    title.Text = "⚡ ESP PREMIUM v2"
+    title.Size = UDim2.new(1, 0, 0, 34)
+    title.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+    title.TextColor3 = Color3.fromRGB(255,255,255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 14
+    title.Parent = frame
+    Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+
+    local yOffset = 40
+    local function addToggle(label, configKey, onColor)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -16, 0, 32)
+        btn.Position = UDim2.new(0, 8, 0, yOffset)
+        btn.BackgroundColor3 = CONFIG[configKey] and (onColor or Color3.fromRGB(0,140,0)) or Color3.fromRGB(80,80,80)
+        btn.TextColor3 = Color3.fromRGB(255,255,255)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 13
+        btn.Text = label .. ": " .. (CONFIG[configKey] and "ON" or "OFF")
+        btn.Parent = frame
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+        btn.MouseButton1Click:Connect(function()
+            CONFIG[configKey] = not CONFIG[configKey]
+            btn.Text = label .. ": " .. (CONFIG[configKey] and "ON" or "OFF")
+            btn.BackgroundColor3 = CONFIG[configKey] and (onColor or Color3.fromRGB(0,140,0)) or Color3.fromRGB(80,80,80)
+        end)
+        yOffset = yOffset + 38
+    end
+
+    addToggle("ESP", "Enabled", Color3.fromRGB(200,0,0))
+    addToggle("Enemy", "ShowEnemy", Color3.fromRGB(200,0,0))
+    addToggle("Team", "ShowTeam", Color3.fromRGB(0,140,0))
+    addToggle("Tracers", "ShowTracers", Color3.fromRGB(180,140,0))
+    addToggle("Box", "ShowBox", Color3.fromRGB(60,60,180))
+    addToggle("Health", "ShowHealth", Color3.fromRGB(0,150,80))
+    addToggle("Distance", "ShowDistance", Color3.fromRGB(80,80,80))
+
+    -- Hide toggle
+    local hideBtn = Instance.new("TextButton")
+    hideBtn.Size = UDim2.new(1, -16, 0, 28)
+    hideBtn.Position = UDim2.new(0, 8, 0, yOffset)
+    hideBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    hideBtn.TextColor3 = Color3.fromRGB(200,200,200)
+    hideBtn.Font = Enum.Font.Gotham
+    hideBtn.TextSize = 12
+    hideBtn.Text = "[ Hide Panel ]"
+    hideBtn.Parent = frame
+    Instance.new("UICorner", hideBtn).CornerRadius = UDim.new(0, 6)
+
+    local panelVisible = true
+    hideBtn.MouseButton1Click:Connect(function()
+        panelVisible = not panelVisible
+        for _, child in pairs(frame:GetChildren()) do
+            if child ~= hideBtn and child.Name ~= "UICorner" then
+                child.Visible = panelVisible
+            end
+        end
+        hideBtn.Text = panelVisible and "[ Hide Panel ]" or "[ Show Panel ]"
+    end)
+end
+
+-- Init
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then createESP(player) end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if not ESPObjects[player] then createESP(player) end
+    end)
+    createESP(player)
+end)
+
+Players.PlayerRemoving:Connect(removeESP)
+
+RunService.RenderStepped:Connect(updateESP)
+buildPanel()
