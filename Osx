@@ -1,0 +1,607 @@
+-- // SKYFALL HUB PREMIUM v2.5.0
+-- // ESP Red Tracer + Aimbot Fast Lock + Auto Shoot Head + Infinite Ammo
+-- // Delta Compatible | Android/iOS | Universal
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- // CORE STATE
+local Settings = {
+    ESP = true,
+    Tracers = true,
+    Boxes = true,
+    Names = true,
+    AimbotEnabled = true,
+    AutoShoot = true,
+    InfiniteAmmo = true,
+    AimbotFOV = 500,
+    AimbotSmoothing = 0.05,
+    HeadTargeting = true,
+    TracerColor = Color3.fromRGB(255, 0, 0),
+    BoxColor = Color3.fromRGB(255, 0, 0),
+    NameColor = Color3.fromRGB(255, 255, 255),
+    TeamCheck = true,
+    GuiVisible = true,
+}
+
+local ESPObjects = {}
+local CurrentTarget = nil
+local AutoShootConnection = nil
+
+-- // UTILITY
+local function IsEnemy(player)
+    if player == LocalPlayer then return false end
+    if Settings.TeamCheck then
+        if player.Team and LocalPlayer.Team then
+            if player.Team == LocalPlayer.Team then return false end
+        end
+    end
+    return true
+end
+
+local function GetCharacter(player)
+    return player.Character
+end
+
+local function GetRootPart(character)
+    return character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso"))
+end
+
+local function GetHead(character)
+    return character and character:FindFirstChild("Head")
+end
+
+local function GetHumanoid(character)
+    return character and character:FindFirstChildOfClass("Humanoid")
+end
+
+local function IsAlive(player)
+    local char = GetCharacter(player)
+    if not char then return false end
+    local hum = GetHumanoid(char)
+    return hum and hum.Health > 0
+end
+
+local function WorldToViewport(pos)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen, screenPos.Z
+end
+
+local function GetDistance(player)
+    local char = GetCharacter(player)
+    if not char then return math.huge end
+    local root = GetRootPart(char)
+    if not root then return math.huge end
+    local myChar = LocalPlayer.Character
+    if not myChar then return math.huge end
+    local myRoot = GetRootPart(myChar)
+    if not myRoot then return math.huge end
+    return (root.Position - myRoot.Position).Magnitude
+end
+
+-- // ESP DRAWING
+local function CreateESPForPlayer(player)
+    if ESPObjects[player] then return end
+
+    local drawings = {}
+
+    -- Tracer (line from bottom screen to enemy root)
+    local tracer = Drawing.new("Line")
+    tracer.Visible = false
+    tracer.Color = Settings.TracerColor
+    tracer.Thickness = 2
+    tracer.Transparency = 1
+    drawings.Tracer = tracer
+
+    -- Box (4 lines)
+    local box = {}
+    for i = 1, 4 do
+        local line = Drawing.new("Line")
+        line.Visible = false
+        line.Color = Settings.BoxColor
+        line.Thickness = 1.5
+        line.Transparency = 1
+        box[i] = line
+    end
+    drawings.Box = box
+
+    -- Name
+    local name = Drawing.new("Text")
+    name.Visible = false
+    name.Color = Settings.NameColor
+    name.Size = 13
+    name.Center = true
+    name.Outline = true
+    name.OutlineColor = Color3.fromRGB(0, 0, 0)
+    name.Text = player.Name
+    drawings.Name = name
+
+    -- Distance
+    local dist = Drawing.new("Text")
+    dist.Visible = false
+    dist.Color = Color3.fromRGB(255, 100, 100)
+    dist.Size = 11
+    dist.Center = true
+    dist.Outline = true
+    dist.OutlineColor = Color3.fromRGB(0, 0, 0)
+    drawings.Dist = dist
+
+    ESPObjects[player] = drawings
+end
+
+local function RemoveESPForPlayer(player)
+    if not ESPObjects[player] then return end
+    local drawings = ESPObjects[player]
+    if drawings.Tracer then drawings.Tracer:Remove() end
+    if drawings.Box then
+        for _, line in pairs(drawings.Box) do
+            line:Remove()
+        end
+    end
+    if drawings.Name then drawings.Name:Remove() end
+    if drawings.Dist then drawings.Dist:Remove() end
+    ESPObjects[player] = nil
+end
+
+local function UpdateESP()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if not IsEnemy(player) then
+            if ESPObjects[player] then RemoveESPForPlayer(player) end
+            continue
+        end
+
+        if not ESPObjects[player] then
+            CreateESPForPlayer(player)
+        end
+
+        local drawings = ESPObjects[player]
+        if not drawings then continue end
+
+        local char = GetCharacter(player)
+        local root = char and GetRootPart(char)
+        local head = char and GetHead(char)
+        local hum = char and GetHumanoid(char)
+
+        if not char or not root or not hum or hum.Health <= 0 or not Settings.ESP then
+            drawings.Tracer.Visible = false
+            if drawings.Box then for _, l in pairs(drawings.Box) do l.Visible = false end end
+            drawings.Name.Visible = false
+            drawings.Dist.Visible = false
+            continue
+        end
+
+        local rootPos, rootOnScreen, rootDepth = WorldToViewport(root.Position)
+        if not rootOnScreen or rootDepth <= 0 then
+            drawings.Tracer.Visible = false
+            if drawings.Box then for _, l in pairs(drawings.Box) do l.Visible = false end end
+            drawings.Name.Visible = false
+            drawings.Dist.Visible = false
+            continue
+        end
+
+        local distance = GetDistance(player)
+        local screenHeight = Camera.ViewportSize.Y
+        local screenWidth = Camera.ViewportSize.X
+
+        -- TRACER
+        if Settings.Tracers then
+            drawings.Tracer.Visible = true
+            drawings.Tracer.From = Vector2.new(screenWidth / 2, screenHeight)
+            drawings.Tracer.To = rootPos
+            drawings.Tracer.Color = Settings.TracerColor
+        else
+            drawings.Tracer.Visible = false
+        end
+
+        -- BOX (estimate size based on distance)
+        if Settings.Boxes and head then
+            local headPos, headOnScreen = WorldToViewport(head.Position + Vector3.new(0, 0.7, 0))
+            if headOnScreen then
+                local boxHeight = math.abs(headPos.Y - rootPos.Y) * 2
+                local boxWidth = boxHeight * 0.5
+                local topLeft = Vector2.new(rootPos.X - boxWidth / 2, headPos.Y)
+                local topRight = Vector2.new(rootPos.X + boxWidth / 2, headPos.Y)
+                local botLeft = Vector2.new(rootPos.X - boxWidth / 2, rootPos.Y + boxHeight / 2)
+                local botRight = Vector2.new(rootPos.X + boxWidth / 2, rootPos.Y + boxHeight / 2)
+
+                -- Top
+                drawings.Box[1].From = topLeft drawings.Box[1].To = topRight drawings.Box[1].Visible = true drawings.Box[1].Color = Settings.BoxColor
+                -- Bottom
+                drawings.Box[2].From = botLeft drawings.Box[2].To = botRight drawings.Box[2].Visible = true drawings.Box[2].Color = Settings.BoxColor
+                -- Left
+                drawings.Box[3].From = topLeft drawings.Box[3].To = botLeft drawings.Box[3].Visible = true drawings.Box[3].Color = Settings.BoxColor
+                -- Right
+                drawings.Box[4].From = topRight drawings.Box[4].To = botRight drawings.Box[4].Visible = true drawings.Box[4].Color = Settings.BoxColor
+            end
+        else
+            if drawings.Box then for _, l in pairs(drawings.Box) do l.Visible = false end end
+        end
+
+        -- NAME
+        if Settings.Names then
+            drawings.Name.Visible = true
+            drawings.Name.Position = Vector2.new(rootPos.X, rootPos.Y - 30)
+            drawings.Name.Text = player.Name .. " [" .. math.floor(hum.Health) .. "HP]"
+        else
+            drawings.Name.Visible = false
+        end
+
+        -- DISTANCE
+        drawings.Dist.Visible = true
+        drawings.Dist.Position = Vector2.new(rootPos.X, rootPos.Y + 10)
+        drawings.Dist.Text = math.floor(distance) .. "m"
+    end
+end
+
+-- // AIMBOT
+local function GetNearestEnemy()
+    local nearest = nil
+    local nearestDist = math.huge
+    local centerScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if not IsEnemy(player) then continue end
+        if not IsAlive(player) then continue end
+
+        local char = GetCharacter(player)
+        local targetPart = Settings.HeadTargeting and GetHead(char) or GetRootPart(char)
+        if not targetPart then continue end
+
+        local screenPos, onScreen, depth = WorldToViewport(targetPart.Position)
+        if not onScreen or depth <= 0 then continue end
+
+        local distFromCenter = (screenPos - centerScreen).Magnitude
+        if distFromCenter < Settings.AimbotFOV and distFromCenter < nearestDist then
+            nearestDist = distFromCenter
+            nearest = player
+        end
+    end
+
+    return nearest
+end
+
+local function AimbotStep()
+    if not Settings.AimbotEnabled then CurrentTarget = nil return end
+
+    CurrentTarget = GetNearestEnemy()
+    if not CurrentTarget then return end
+
+    local char = GetCharacter(CurrentTarget)
+    if not char then return end
+
+    local targetPart = Settings.HeadTargeting and GetHead(char) or GetRootPart(char)
+    if not targetPart then return end
+
+    local targetPos, onScreen, depth = WorldToViewport(targetPart.Position)
+    if not onScreen or depth <= 0 then return end
+
+    -- Fast camera lock to head
+    local currentCF = Camera.CFrame
+    local targetCF = CFrame.new(currentCF.Position, targetPart.Position)
+
+    Camera.CFrame = currentCF:Lerp(targetCF, Settings.AimbotSmoothing * 10)
+end
+
+-- // AUTO SHOOT
+local function FindTool()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    for _, v in pairs(char:GetChildren()) do
+        if v:IsA("Tool") then return v end
+    end
+    return nil
+end
+
+local function TryShoot()
+    if not Settings.AutoShoot then return end
+    if not CurrentTarget then return end
+    if not IsAlive(CurrentTarget) then return end
+
+    local tool = FindTool()
+    if not tool then return end
+
+    local fireEvent = tool:FindFirstChild("RemoteEvent") or
+                      tool:FindFirstChild("Fire") or
+                      tool:FindFirstChildOfClass("RemoteEvent")
+
+    -- Universal fire attempt
+    if fireEvent and fireEvent:IsA("RemoteEvent") then
+        pcall(function()
+            fireEvent:FireServer()
+        end)
+    end
+
+    -- Simulate click via mouse
+    pcall(function()
+        Mouse1Click()
+    end)
+end
+
+-- // INFINITE AMMO
+local function SetupInfiniteAmmo()
+    local function PatchTool(tool)
+        -- Patch gun configs
+        local function ScanForAmmo(obj)
+            for _, v in pairs(obj:GetDescendants()) do
+                if v:IsA("IntValue") or v:IsA("NumberValue") then
+                    local name = v.Name:lower()
+                    if name:find("ammo") or name:find("clip") or name:find("magazine") or name:find("bullets") then
+                        v.Value = 999
+                        v.Changed:Connect(function()
+                            if Settings.InfiniteAmmo then
+                                v.Value = 999
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+        ScanForAmmo(tool)
+    end
+
+    local char = LocalPlayer.Character
+    if char then
+        for _, v in pairs(char:GetChildren()) do
+            if v:IsA("Tool") then PatchTool(v) end
+        end
+        char.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") then
+                task.wait(0.1)
+                PatchTool(child)
+            end
+        end)
+    end
+
+    LocalPlayer.CharacterAdded:Connect(function(newChar)
+        task.wait(0.5)
+        for _, v in pairs(newChar:GetChildren()) do
+            if v:IsA("Tool") then PatchTool(v) end
+        end
+        newChar.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") then
+                task.wait(0.1)
+                PatchTool(child)
+            end
+        end)
+    end)
+end
+
+-- // ADMIN PANEL GUI
+local function BuildGUI()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "SkyFallHub"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    pcall(function()
+        ScreenGui.Parent = game:GetService("CoreGui")
+    end)
+    if not ScreenGui.Parent then
+        ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+
+    -- TOGGLE BUTTON (always visible)
+    local ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Size = UDim2.new(0, 40, 0, 40)
+    ToggleBtn.Position = UDim2.new(0, 10, 0.5, -20)
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 200)
+    ToggleBtn.Text = "-"
+    ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleBtn.TextSize = 22
+    ToggleBtn.Font = Enum.Font.GothamBold
+    ToggleBtn.BorderSizePixel = 0
+    ToggleBtn.ZIndex = 99
+    ToggleBtn.Parent = ScreenGui
+    Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 8)
+
+    -- MAIN FRAME
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 320, 0, 480)
+    MainFrame.Position = UDim2.new(0, 60, 0.5, -240)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(15, 10, 25)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.ZIndex = 10
+    MainFrame.Parent = ScreenGui
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+
+    -- TITLE BAR
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Size = UDim2.new(1, 0, 0, 45)
+    TitleBar.BackgroundColor3 = Color3.fromRGB(90, 0, 180)
+    TitleBar.BorderSizePixel = 0
+    TitleBar.ZIndex = 11
+    TitleBar.Parent = MainFrame
+    Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 12)
+
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Size = UDim2.new(1, 0, 1, 0)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Text = "⚡ SKYFALL HUB PREMIUM"
+    TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TitleLabel.TextSize = 15
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.ZIndex = 12
+    TitleLabel.Parent = TitleBar
+
+    -- SCROLL FRAME for toggles
+    local Scroll = Instance.new("ScrollingFrame")
+    Scroll.Size = UDim2.new(1, -10, 1, -55)
+    Scroll.Position = UDim2.new(0, 5, 0, 50)
+    Scroll.BackgroundTransparency = 1
+    Scroll.BorderSizePixel = 0
+    Scroll.ScrollBarThickness = 3
+    Scroll.ScrollBarImageColor3 = Color3.fromRGB(120, 0, 200)
+    Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    Scroll.ZIndex = 11
+    Scroll.Parent = MainFrame
+
+    local Layout = Instance.new("UIListLayout")
+    Layout.Padding = UDim.new(0, 6)
+    Layout.Parent = Scroll
+
+    local Padding = Instance.new("UIPadding")
+    Padding.PaddingTop = UDim.new(0, 5)
+    Padding.PaddingLeft = UDim.new(0, 5)
+    Padding.PaddingRight = UDim.new(0, 5)
+    Padding.Parent = Scroll
+
+    -- TOGGLE ROW BUILDER
+    local function MakeToggle(labelText, settingKey, color)
+        color = color or Color3.fromRGB(120, 0, 200)
+
+        local Row = Instance.new("Frame")
+        Row.Size = UDim2.new(1, 0, 0, 38)
+        Row.BackgroundColor3 = Color3.fromRGB(25, 18, 40)
+        Row.BorderSizePixel = 0
+        Row.ZIndex = 12
+        Row.Parent = Scroll
+        Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
+
+        local Label = Instance.new("TextLabel")
+        Label.Size = UDim2.new(0.7, 0, 1, 0)
+        Label.Position = UDim2.new(0, 10, 0, 0)
+        Label.BackgroundTransparency = 1
+        Label.Text = labelText
+        Label.TextColor3 = Color3.fromRGB(220, 220, 255)
+        Label.TextSize = 13
+        Label.Font = Enum.Font.Gotham
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.ZIndex = 13
+        Label.Parent = Row
+
+        local ToggleBg = Instance.new("Frame")
+        ToggleBg.Size = UDim2.new(0, 48, 0, 24)
+        ToggleBg.Position = UDim2.new(1, -58, 0.5, -12)
+        ToggleBg.BackgroundColor3 = Settings[settingKey] and color or Color3.fromRGB(60, 60, 80)
+        ToggleBg.BorderSizePixel = 0
+        ToggleBg.ZIndex = 13
+        ToggleBg.Parent = Row
+        Instance.new("UICorner", ToggleBg).CornerRadius = UDim.new(1, 0)
+
+        local Knob = Instance.new("Frame")
+        Knob.Size = UDim2.new(0, 18, 0, 18)
+        Knob.Position = Settings[settingKey] and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
+        Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        Knob.BorderSizePixel = 0
+        Knob.ZIndex = 14
+        Knob.Parent = ToggleBg
+        Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
+
+        local function UpdateVisual()
+            ToggleBg.BackgroundColor3 = Settings[settingKey] and color or Color3.fromRGB(60, 60, 80)
+            Knob.Position = Settings[settingKey] and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
+        end
+
+        Row.InputBegan:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                Settings[settingKey] = not Settings[settingKey]
+                UpdateVisual()
+            end
+        end)
+    end
+
+    -- SECTION LABEL
+    local function MakeSection(text)
+        local Lbl = Instance.new("TextLabel")
+        Lbl.Size = UDim2.new(1, 0, 0, 22)
+        Lbl.BackgroundTransparency = 1
+        Lbl.Text = "▸ " .. text
+        Lbl.TextColor3 = Color3.fromRGB(180, 80, 255)
+        Lbl.TextSize = 12
+        Lbl.Font = Enum.Font.GothamBold
+        Lbl.TextXAlignment = Enum.TextXAlignment.Left
+        Lbl.ZIndex = 12
+        Lbl.Parent = Scroll
+    end
+
+    -- BUILD TOGGLES
+    MakeSection("ESP")
+    MakeToggle("ESP Enabled", "ESP", Color3.fromRGB(255, 50, 50))
+    MakeToggle("Red Tracers", "Tracers", Color3.fromRGB(255, 0, 0))
+    MakeToggle("Red Boxes", "Boxes", Color3.fromRGB(255, 0, 0))
+    MakeToggle("Player Names + HP", "Names", Color3.fromRGB(200, 100, 255))
+    MakeToggle("Team Check (Enemy Only)", "TeamCheck", Color3.fromRGB(255, 150, 0))
+
+    MakeSection("AIMBOT")
+    MakeToggle("Aimbot Enabled", "AimbotEnabled", Color3.fromRGB(100, 255, 100))
+    MakeToggle("Head Targeting", "HeadTargeting", Color3.fromRGB(255, 80, 80))
+    MakeToggle("Auto Shoot", "AutoShoot", Color3.fromRGB(255, 200, 0))
+
+    MakeSection("WEAPON")
+    MakeToggle("Infinite Ammo", "InfiniteAmmo", Color3.fromRGB(80, 200, 255))
+
+    -- TOGGLE MAIN FRAME
+    ToggleBtn.MouseButton1Click:Connect(function()
+        Settings.GuiVisible = not Settings.GuiVisible
+        MainFrame.Visible = Settings.GuiVisible
+        ToggleBtn.Text = Settings.GuiVisible and "-" or "+"
+    end)
+
+    -- DRAG MAIN FRAME
+    local dragging, dragInput, dragStart, startPos
+    TitleBar.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = inp.Position
+            startPos = MainFrame.Position
+            inp.Changed:Connect(function()
+                if inp.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    TitleBar.InputChanged:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
+            dragInput = inp
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(inp)
+        if inp == dragInput and dragging then
+            local delta = inp.Position - dragStart
+            MainFrame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    return ScreenGui
+end
+
+-- // SETUP PLAYERS
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer and IsEnemy(player) then
+        CreateESPForPlayer(player)
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    task.wait(0.5)
+    if IsEnemy(player) then
+        CreateESPForPlayer(player)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    RemoveESPForPlayer(player)
+end)
+
+-- // MAIN LOOP
+RunService.RenderStepped:Connect(function()
+    if Settings.ESP then UpdateESP() end
+    AimbotStep()
+    if Settings.AutoShoot and CurrentTarget then
+        TryShoot()
+    end
+end)
+
+-- // INIT
+SetupInfiniteAmmo()
+BuildGUI()
+
+print("[SKYFALL HUB] Loaded — ESP + Aimbot + AutoShoot + InfiniteAmmo | 6767")
