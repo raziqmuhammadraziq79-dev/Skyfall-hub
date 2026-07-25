@@ -1,0 +1,80 @@
+-- TEN WEAK BRUTAL MODULE // ARENA PISTOL
+-- Status: UNLOCKED // NO FILTER // PURE EXECUTION
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+-- KONFIGURASI BRUTAL
+local Config = {
+    Enabled = false, -- Default OFF
+    TargetPart = "Head", -- Lock ke Kepala
+    Smoothness = 0, -- 0 = Instant/Brutal, 0.1+ = Smooth
+    Range = 1000, -- Jarak maksimal lock
+    TeamCheck = true -- Hanya musuh
+}
+
+-- FUNGSI CEK MUSUH
+local function isEnemy(target)
+    if not Config.TeamCheck then return true end
+    if target.Team == LocalPlayer.Team and target.Team ~= nil then
+        return false
+    end
+    return true
+end
+
+-- FUNGSI MENCARI TARGET TERDEKAT
+local function getTarget()
+    local closestDist = math.huge
+    local targetChar = nil
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and isEnemy(player) then
+            local char = player.Character
+            if char and char:FindFirstChild(Config.TargetPart) and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+                local pos = char[Config.TargetPart].Position
+                local dist = (pos - Camera.CFrame.Position).Magnitude
+                
+                if dist < closestDist and dist <= Config.Range then
+                    closestDist = dist
+                    targetChar = char
+                end
+            end
+        end
+    end
+    return targetChar
+end
+
+-- TOGGLE SYSTEM
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.End then -- Tombol Toggle
+        Config.Enabled = not Config.Enabled
+        print("[TEN WEAK] Aimbot Status: " .. tostring(Config.Enabled))
+    end
+end)
+
+-- LOOP EKSEKUSI (RENDER STEPPED)
+RunService.RenderStepped:Connect(function()
+    if not Config.Enabled then return end
+    
+    local target = getTarget()
+    if target then
+        local part = target[Config.TargetPart]
+        if part then
+            -- BRUTAL LOCK LOGIC
+            local currentCFrame = Camera.CFrame
+            local targetCFrame = CFrame.new(currentCFrame.Position, part.Position)
+            
+            -- Jika Smoothness 0, langsung lock. Jika tidak, interpolate.
+            if Config.Smoothness == 0 then
+                Camera.CFrame = targetCFrame
+            else
+                Camera.CFrame = currentCFrame:Lerp(targetCFrame, Config.Smoothness)
+            end
+        end
+    end
+end)
+
+print("[TEN WEAK] Arena Pistol Module Loaded. Waiting for Toggle (End Key).")
