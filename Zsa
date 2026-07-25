@@ -1,0 +1,826 @@
+-- ╔════════════════════════════════════════════════════════╗
+-- ║  ONYX v35  |  DELTA MOBILE  |  iOS + Android          ║
+-- ║  Nuclear Rewrite — Team Logic Fixed From Root          ║
+-- ║  9 Rare Aim Features  |  Anti Ngaco  |  Premium       ║
+-- ╚════════════════════════════════════════════════════════╝
+
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local VirtualUser      = game:GetService("VirtualUser")
+local Camera           = workspace.CurrentCamera
+local LP               = Players.LocalPlayer
+
+-- ════════════════════════════════════════════════════════
+-- TEAM ENGINE — ROOT LEVEL FIX
+-- Pake string comparison nama tim, bukan object reference
+-- Ini fix SEMUA kasus termasuk game yang teamnya custom
+-- ════════════════════════════════════════════════════════
+local function GetTeamName(player)
+    -- Priority 1: Team object
+    if player.Team then
+        return tostring(player.Team.Name)
+    end
+    -- Priority 2: TeamColor sebagai string key
+    if player.TeamColor then
+        return tostring(player.TeamColor)
+    end
+    -- Priority 3: cek via leaderstats atau attribute team
+    local ls = player:FindFirstChild("leaderstats")
+    if ls then
+        local t = ls:FindFirstChild("Team") or ls:FindFirstChild("team")
+        if t then return tostring(t.Value) end
+    end
+    -- No team info = treat as enemy
+    return "NONE_" .. player.UserId
+end
+
+local function IsEnemyOf(player)
+    if player == LP then return false end
+    local myTeam = GetTeamName(LP)
+    local theirTeam = GetTeamName(player)
+    -- Kalau dua duanya NONE = enemy (FFA)
+    if myTeam:sub(1,5) == "NONE_" and theirTeam:sub(1,5) == "NONE_" then
+        return true
+    end
+    return myTeam ~= theirTeam
+end
+
+local function IsTeammateOf(player)
+    if player == LP then return false end
+    local myTeam = GetTeamName(LP)
+    local theirTeam = GetTeamName(player)
+    if myTeam:sub(1,5) == "NONE_" then return false end
+    return myTeam == theirTeam
+end
+
+local function IsFriendOf(player)
+    local ok, res = pcall(function()
+        return LP:IsFriendsWith(player.UserId)
+    end)
+    return ok and res or false
+end
+
+-- Relation: returns "enemy" | "team" | "friend"
+local RelCache = {}
+local function GetRel(player)
+    if RelCache[player] then return RelCache[player] end
+    local r
+    if IsTeammateOf(player) then
+        r = "team"
+    elseif IsFriendOf(player) then
+        r = "friend"
+    else
+        r = "enemy"
+    end
+    RelCache[player] = r
+    return r
+end
+
+-- Refresh cache tiap 2 detik
+task.spawn(function()
+    while true do
+        task.wait(2)
+        RelCache = {}
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    RelCache[p] = nil
+end)
+
+-- ════════════════════════════════════════════════════════
+-- CONFIG
+-- ════════════════════════════════════════════════════════
+local Cfg = {
+    -- ESP
+    ESP             = true,
+    ESP_Enemy       = true,
+    ESP_Team        = false,
+    ESP_Friend      = false,
+    ShowBox         = true,
+    ShowName        = true,
+    ShowDist        = true,
+    ShowHealth      = true,
+    ShowLabel       = true,
+    ShowSkeleton    = false,
+    MaxDist         = 2000,
+
+    -- Tracer
+    Tracer          = true,
+    Tracer_Enemy    = true,
+    Tracer_Team     = false,   -- ← ROOT FIX: ini yang bikin team kena
+    Tracer_Friend   = false,
+    TracerOrigin    = "Bottom",
+    TracerThick     = 1.5,
+
+    -- ── 9 RARE AIM FEATURES ──
+    -- [1] Smooth Aim Assist: kamera slide halus ke musuh
+    AimAssist       = true,
+    AssistSmooth    = 0.25,
+
+    -- [2] Snap Aim: langsung lock 100% ke kepala (toggle)
+    SnapAim         = false,
+    SnapPart        = "Head",
+
+    -- [3] Silent Aim: peluru otomatis ke target tanpa gerak kamera
+    SilentAim       = true,
+
+    -- [4] Auto Shoot Mobile: tembak otomatis via VirtualUser
+    AutoShoot       = true,
+    ShootDelay      = 0.09,
+
+    -- [5] Prediction Aim: lead target sesuai velocity
+    PredictAim      = true,
+    PredictFactor   = 0.12,
+
+    -- [6] Auto Flick: flick ke kepala musuh saat masuk FOV (one-shot style)
+    AutoFlick       = true,
+    FlickSmooth     = 0.55,
+    FlickCooldown   = 0.4,
+
+    -- [7] FOV Priority: pilih target berdasarkan FOV terkecil (bukan jarak)
+    FOVPriority     = true,
+    AimFOV          = 180,
+
+    -- [8] Head Snap Delay: delay microsecond sebelum snap (anti-cheat evade)
+    HeadSnapDelay   = false,
+    HeadSnapMs      = 0.06,
+
+    -- [9] Auto Closest Bone: auto switch aim ke bone yang paling visible
+    AutoBone        = true,
+    BoneList        = {"Head","UpperTorso","LowerTorso","HumanoidRootPart"},
+
+    -- Movement
+    BunnyHop        = true,
+    AutoSlide       = true,
+    SpeedBoost      = false,
+    SpeedVal        = 26,
+
+    -- Visual
+    ShowCrosshair   = true,
+    ShowFOV         = true,
+    FOVCol          = Color3.fromRGB(255, 70, 255),
+    ShowArrow       = true,
+
+    -- Colors
+    Col_E   = Color3.fromRGB(255, 50,  50),
+    Col_T   = Color3.fromRGB(50,  210, 255),
+    Col_F   = Color3.fromRGB(50,  255, 110),
+    Col_TrE = Color3.fromRGB(255, 40,  40),
+    Col_TrT = Color3.fromRGB(40,  200, 255),
+    Col_TrF = Color3.fromRGB(40,  255, 100),
+    Col_Nam = Color3.fromRGB(255, 255, 255),
+    Col_Dst = Color3.fromRGB(255, 215, 45),
+    Col_LbE = Color3.fromRGB(255, 80,  80),
+    Col_LbT = Color3.fromRGB(80,  200, 255),
+    Col_LbF = Color3.fromRGB(80,  255, 130),
+    Col_HHi = Color3.fromRGB(40,  255, 80),
+    Col_HLo = Color3.fromRGB(255, 40,  40),
+}
+
+-- ════════════════════════════════════════════════════════
+-- UTILS
+-- ════════════════════════════════════════════════════════
+local function W2V(pos)
+    local v, on = Camera:WorldToViewportPoint(pos)
+    return Vector2.new(v.X, v.Y), on, v.Z
+end
+
+local function LerpC(a, b, t)
+    return Color3.new(
+        a.R+(b.R-a.R)*t,
+        a.G+(b.G-a.G)*t,
+        a.B+(b.B-a.B)*t
+    )
+end
+
+local function GetChar(p)  return p.Character end
+local function GetRoot(c)  return c and c:FindFirstChild("HumanoidRootPart") end
+local function GetHum(c)   return c and c:FindFirstChildOfClass("Humanoid") end
+local function GetHead(c)  return c and c:FindFirstChild("Head") end
+local function GetVel(c)
+    local r = GetRoot(c)
+    return r and r.Velocity or Vector3.zero
+end
+
+local function BBox2D(char)
+    local minX,minY,maxX,maxY = math.huge,math.huge,-math.huge,-math.huge
+    local hit = false
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            local s  = part.Size * 0.5
+            local cf = part.CFrame
+            for _, o in ipairs({
+                Vector3.new( s.X, s.Y, s.Z),Vector3.new(-s.X, s.Y, s.Z),
+                Vector3.new( s.X,-s.Y, s.Z),Vector3.new(-s.X,-s.Y, s.Z),
+                Vector3.new( s.X, s.Y,-s.Z),Vector3.new(-s.X, s.Y,-s.Z),
+                Vector3.new( s.X,-s.Y,-s.Z),Vector3.new(-s.X,-s.Y,-s.Z),
+            }) do
+                local sv, on = W2V(cf:PointToWorldSpace(o))
+                if on then
+                    hit=true
+                    minX=math.min(minX,sv.X); minY=math.min(minY,sv.Y)
+                    maxX=math.max(maxX,sv.X); maxY=math.max(maxY,sv.Y)
+                end
+            end
+        end
+    end
+    if not hit then return nil,nil end
+    return Vector2.new(minX,minY), Vector2.new(maxX,maxY)
+end
+
+-- ════════════════════════════════════════════════════════
+-- DRAWING
+-- ════════════════════════════════════════════════════════
+local AllD = {}
+local function D(t, props)
+    local d = Drawing.new(t)
+    for k,v in pairs(props or {}) do d[k]=v end
+    table.insert(AllD, d)
+    return d
+end
+local function Kill(d)
+    if not d then return end
+    d.Visible = false
+    pcall(function() d:Remove() end)
+end
+
+-- Global visuals
+local CrossH  = D("Line",   {Thickness=1.5,Color=Color3.new(1,1,1),Transparency=0.15,ZIndex=10})
+local CrossV  = D("Line",   {Thickness=1.5,Color=Color3.new(1,1,1),Transparency=0.15,ZIndex=10})
+local FOVC    = D("Circle", {Thickness=1.2,Color=Cfg.FOVCol,Transparency=0.55,Filled=false,ZIndex=10})
+
+-- ════════════════════════════════════════════════════════
+-- ESP POOL
+-- ════════════════════════════════════════════════════════
+local ESPMap = {}
+
+local function MakeESP(p)
+    local e = {
+        C      = {},
+        Name   = D("Text",    {Size=13,Font=2,Center=true,Outline=true,ZIndex=7,Visible=false}),
+        Label  = D("Text",    {Size=10,Font=2,Center=true,Outline=true,ZIndex=7,Visible=false}),
+        Dist   = D("Text",    {Size=11,Font=2,Center=true,Outline=true,ZIndex=7,Visible=false}),
+        HBG    = D("Line",    {Thickness=5,Color=Color3.new(0,0,0),ZIndex=5,Visible=false}),
+        HBar   = D("Line",    {Thickness=5,ZIndex=6,Visible=false}),
+        Tracer = D("Line",    {ZIndex=5,Visible=false}),
+        Arrow  = D("Triangle",{Filled=true,ZIndex=8,Visible=false}),
+    }
+    for i=1,8 do
+        e.C[i] = D("Line",{Thickness=1.8,ZIndex=6,Visible=false})
+    end
+    ESPMap[p] = e
+end
+
+local function HideAll(p)
+    local e = ESPMap[p]; if not e then return end
+    for _,v in pairs(e.C) do v.Visible=false end
+    e.Name.Visible=false; e.Label.Visible=false; e.Dist.Visible=false
+    e.HBG.Visible=false;  e.HBar.Visible=false
+    e.Tracer.Visible=false; e.Arrow.Visible=false
+end
+
+local function DestroyESP(p)
+    local e = ESPMap[p]; if not e then return end
+    for _,v in pairs(e.C) do Kill(v) end
+    Kill(e.Name); Kill(e.Label); Kill(e.Dist)
+    Kill(e.HBG);  Kill(e.HBar);  Kill(e.Tracer); Kill(e.Arrow)
+    ESPMap[p] = nil
+end
+
+local function DrawCorner(C,tl,tr,bl,br,col)
+    local cw=(tr.X-tl.X)*0.22; local ch=(bl.Y-tl.Y)*0.22
+    C[1].From=tl; C[1].To=tl+Vector2.new(cw,0);  C[1].Color=col; C[1].Visible=true
+    C[2].From=tl; C[2].To=tl+Vector2.new(0,ch);  C[2].Color=col; C[2].Visible=true
+    C[3].From=tr; C[3].To=tr-Vector2.new(cw,0);  C[3].Color=col; C[3].Visible=true
+    C[4].From=tr; C[4].To=tr+Vector2.new(0,ch);  C[4].Color=col; C[4].Visible=true
+    C[5].From=bl; C[5].To=bl+Vector2.new(cw,0);  C[5].Color=col; C[5].Visible=true
+    C[6].From=bl; C[6].To=bl-Vector2.new(0,ch);  C[6].Color=col; C[6].Visible=true
+    C[7].From=br; C[7].To=br-Vector2.new(cw,0);  C[7].Color=col; C[7].Visible=true
+    C[8].From=br; C[8].To=br-Vector2.new(0,ch);  C[8].Color=col; C[8].Visible=true
+end
+
+-- ════════════════════════════════════════════════════════
+-- AIM ENGINE — 9 FEATURES
+-- ════════════════════════════════════════════════════════
+local AimTarget   = nil
+local LastShot    = 0
+local LastFlick   = 0
+local SnapPending = false
+
+-- [9] Auto Closest Bone
+local function GetBestBone(char)
+    if not Cfg.AutoBone then
+        return char:FindFirstChild(Cfg.SnapPart) or GetHead(char) or GetRoot(char)
+    end
+    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    local best, bestD = nil, math.huge
+    for _, boneName in ipairs(Cfg.BoneList) do
+        local bone = char:FindFirstChild(boneName)
+        if bone then
+            local sv, on = W2V(bone.Position)
+            if on then
+                local d = (sv-center).Magnitude
+                if d < bestD then bestD=d; best=bone end
+            end
+        end
+    end
+    return best or GetHead(char) or GetRoot(char)
+end
+
+-- [5] Prediction
+local function PredictPos(char, part)
+    if not Cfg.PredictAim then return part.Position end
+    local vel  = GetVel(char)
+    local dist = (part.Position - Camera.CFrame.Position).Magnitude
+    local tof  = dist / 1000  -- time of flight estimate
+    return part.Position + vel * tof * Cfg.PredictFactor
+end
+
+-- Target finder — [7] FOV Priority
+local function FindTarget()
+    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    local bestScore = math.huge
+    local bestP     = nil
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LP then continue end
+        -- ── STRICT ENEMY ONLY ──
+        if GetRel(p) ~= "enemy" then continue end
+
+        local c   = GetChar(p)
+        local hum = GetHum(c)
+        if not c or not hum or hum.Health <= 0 then continue end
+
+        local part = GetBestBone(c)
+        if not part then continue end
+
+        local sv, on = W2V(part.Position)
+        if not on then continue end
+
+        local fovDist = (sv - center).Magnitude
+        if fovDist > Cfg.AimFOV then continue end
+
+        -- Score: FOV priority = fovDist, else world distance
+        local worldDist = (part.Position - Camera.CFrame.Position).Magnitude
+        local score = Cfg.FOVPriority and fovDist or worldDist
+
+        if score < bestScore then
+            bestScore = score
+            bestP     = p
+        end
+    end
+    return bestP
+end
+
+-- [4] Auto Shoot Mobile
+local function MobileShoot()
+    if not Cfg.AutoShoot or not AimTarget then return end
+    local now = tick()
+    if now - LastShot < Cfg.ShootDelay then return end
+    LastShot = now
+
+    local c = GetChar(AimTarget)
+    if not GetHum(c) or GetHum(c).Health <= 0 then return end
+
+    -- VirtualUser Button1Down — paling reliable di Delta mobile
+    pcall(function()
+        local vp = Camera.ViewportSize
+        VirtualUser:Button1Down(Vector2.new(vp.X/2, vp.Y/2), CFrame.new())
+        task.delay(0.05, function()
+            pcall(function()
+                VirtualUser:Button1Up(Vector2.new(vp.X/2, vp.Y/2), CFrame.new())
+            end)
+        end)
+    end)
+
+    -- Fallback: tool activate
+    pcall(function()
+        local char = LP.Character; if not char then return end
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") then tool:Activate() end
+        end
+    end)
+end
+
+-- Silent Aim Hook
+pcall(function()
+    local mt  = getrawmetatable(game)
+    local old = mt.__index
+    setreadonly(mt, false)
+    mt.__index = newcclosure(function(self, key)
+        if key == "Hit" and self == LP:GetMouse() then
+            if Cfg.SilentAim and AimTarget then
+                local c    = GetChar(AimTarget)
+                local part = c and GetBestBone(c)
+                if part then
+                    local pos = PredictPos(c, part)
+                    return CFrame.new(pos)
+                end
+            end
+        end
+        return old(self, key)
+    end)
+    setreadonly(mt, true)
+end)
+
+-- ════════════════════════════════════════════════════════
+-- BUNNY HOP — MOBILE FINAL FIX
+-- ════════════════════════════════════════════════════════
+local BHConn
+local function StartBH()
+    if BHConn then pcall(function() BHConn:Disconnect() end) end
+    local debounce = false
+    BHConn = RunService.Heartbeat:Connect(function()
+        if not Cfg.BunnyHop or debounce then return end
+        local c = LP.Character; if not c then return end
+        local hum = GetHum(c); if not hum then return end
+        local state = hum:GetState()
+        if state == Enum.HumanoidStateType.Running
+        or state == Enum.HumanoidStateType.RunningNoPhysics then
+            debounce = true
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            task.wait(0.1)
+            debounce = false
+        end
+    end)
+end
+StartBH()
+LP.CharacterAdded:Connect(function() task.wait(1); StartBH() end)
+
+-- Auto Slide
+RunService.Heartbeat:Connect(function()
+    if not Cfg.AutoSlide then return end
+    local c = LP.Character; if not c then return end
+    local hum = GetHum(c); local root = GetRoot(c)
+    if not hum or not root then return end
+    if root.Velocity.Magnitude > 20
+    and hum.MoveDirection.Magnitude > 0
+    and hum.FloorMaterial ~= Enum.Material.Air then
+        hum:ChangeState(Enum.HumanoidStateType.Running)
+    end
+end)
+
+-- Speed
+RunService.Heartbeat:Connect(function()
+    if not Cfg.SpeedBoost then return end
+    local c = LP.Character; if not c then return end
+    local hum = GetHum(c)
+    if hum then hum.WalkSpeed = Cfg.SpeedVal end
+end)
+
+-- ════════════════════════════════════════════════════════
+-- MAIN LOOP
+-- ════════════════════════════════════════════════════════
+RunService.RenderStepped:Connect(function()
+    local vp     = Camera.ViewportSize
+    local center = Vector2.new(vp.X/2, vp.Y/2)
+
+    -- Crosshair
+    CrossH.From=Vector2.new(center.X-12,center.Y); CrossH.To=Vector2.new(center.X+12,center.Y); CrossH.Visible=Cfg.ShowCrosshair
+    CrossV.From=Vector2.new(center.X,center.Y-12); CrossV.To=Vector2.new(center.X,center.Y+12); CrossV.Visible=Cfg.ShowCrosshair
+    FOVC.Position=center; FOVC.Radius=Cfg.AimFOV; FOVC.Visible=Cfg.ShowFOV
+
+    -- ── AIM ENGINE ──
+    AimTarget = FindTarget()
+
+    if AimTarget then
+        local c    = GetChar(AimTarget)
+        local part = c and GetBestBone(c)
+
+        if part then
+            local aimPos = PredictPos(c, part)  -- [5] Prediction
+            local targetCF = CFrame.new(Camera.CFrame.Position, aimPos)
+
+            -- [1] Smooth Aim Assist
+            if Cfg.AimAssist then
+                Camera.CFrame = Camera.CFrame:Lerp(targetCF, Cfg.AssistSmooth)
+            end
+
+            -- [2] Snap Aim (hard lock)
+            if Cfg.SnapAim then
+                if Cfg.HeadSnapDelay then
+                    -- [8] Head Snap Delay (anti-cheat evade)
+                    if not SnapPending then
+                        SnapPending = true
+                        task.delay(Cfg.HeadSnapMs, function()
+                            Camera.CFrame = targetCF
+                            SnapPending = false
+                        end)
+                    end
+                else
+                    Camera.CFrame = targetCF
+                end
+            end
+
+            -- [6] Auto Flick
+            if Cfg.AutoFlick then
+                local now = tick()
+                if now - LastFlick > Cfg.FlickCooldown then
+                    local sv, on = W2V(part.Position)
+                    if on then
+                        local dist = (sv - center).Magnitude
+                        if dist < Cfg.AimFOV * 0.5 then  -- dalam setengah FOV = flick
+                            LastFlick = now
+                            -- Instant flick ke target lalu smooth balik
+                            local flickCF = CFrame.new(Camera.CFrame.Position, aimPos)
+                            Camera.CFrame = Camera.CFrame:Lerp(flickCF, Cfg.FlickSmooth)
+                        end
+                    end
+                end
+            end
+
+            MobileShoot()
+        end
+    end
+
+    -- ── ESP LOOP ──
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LP then continue end
+        local e = ESPMap[player]; if not e then continue end
+
+        -- ── RELASI KETAT ──
+        local rel = GetRel(player)  -- "enemy" | "team" | "friend"
+
+        -- ── FILTER KETAT SEBELUM APAPUN ──
+        local doESP = Cfg.ESP and (
+            (rel=="enemy"  and Cfg.ESP_Enemy)  or
+            (rel=="team"   and Cfg.ESP_Team)   or
+            (rel=="friend" and Cfg.ESP_Friend)
+        )
+        local doTrace = Cfg.Tracer and (
+            (rel=="enemy"  and Cfg.Tracer_Enemy)  or
+            (rel=="team"   and Cfg.Tracer_Team)   or
+            (rel=="friend" and Cfg.Tracer_Friend)
+        )
+
+        -- Kalau dua duanya false — hide semuanya, skip
+        if not doESP and not doTrace then
+            HideAll(player); continue
+        end
+
+        local c    = GetChar(player)
+        local hum  = GetHum(c)
+        local root = GetRoot(c)
+
+        if not c or not hum or hum.Health<=0 or not root then
+            HideAll(player); continue
+        end
+
+        local dist = (root.Position - Camera.CFrame.Position).Magnitude
+        if dist > Cfg.MaxDist then HideAll(player); continue end
+
+        local rootSV, onScreen = W2V(root.Position)
+
+        -- Colors
+        local col    = rel=="enemy" and Cfg.Col_E  or rel=="team" and Cfg.Col_T  or Cfg.Col_F
+        local trcCol = rel=="enemy" and Cfg.Col_TrE or rel=="team" and Cfg.Col_TrT or Cfg.Col_TrF
+        local lblCol = rel=="enemy" and Cfg.Col_LbE or rel=="team" and Cfg.Col_LbT or Cfg.Col_LbF
+        local lblTxt = rel=="enemy" and "▲ MUSUH" or rel=="team" and "● TEMAN" or "◆ FRIEND"
+
+        -- Off-screen arrow
+        if not onScreen and doESP and Cfg.ShowArrow then
+            local dir  = (rootSV - center)
+            if dir.Magnitude > 0 then
+                dir = dir.Unit
+                local edge = center + dir * (math.min(center.X, center.Y) * 0.82)
+                e.Arrow.PointA = edge + dir * 10
+                e.Arrow.PointB = edge + Vector2.new(-dir.Y, dir.X) * 8
+                e.Arrow.PointC = edge - Vector2.new(-dir.Y, dir.X) * 8
+                e.Arrow.Color  = col
+                e.Arrow.Visible= true
+            end
+        else
+            e.Arrow.Visible = false
+        end
+
+        if not onScreen then
+            for _,v in pairs(e.C) do v.Visible=false end
+            e.Name.Visible=false; e.Label.Visible=false; e.Dist.Visible=false
+            e.HBG.Visible=false;  e.HBar.Visible=false;  e.Tracer.Visible=false
+            continue
+        end
+
+        -- Box
+        if doESP and Cfg.ShowBox then
+            local tl, br = BBox2D(c)
+            if tl and br then
+                local tr2 = Vector2.new(br.X,tl.Y)
+                local bl2 = Vector2.new(tl.X,br.Y)
+                DrawCorner(e.C, tl, tr2, bl2, br, col)
+
+                -- Health bar
+                if Cfg.ShowHealth then
+                    local pct = math.clamp(hum.Health/hum.MaxHealth,0,1)
+                    local bH  = br.Y-tl.Y
+                    local bx  = tl.X-7
+                    e.HBG.From=Vector2.new(bx,tl.Y); e.HBG.To=Vector2.new(bx,br.Y); e.HBG.Visible=true
+                    e.HBar.Color=LerpC(Cfg.Col_HLo,Cfg.Col_HHi,pct)
+                    e.HBar.From=Vector2.new(bx,br.Y); e.HBar.To=Vector2.new(bx,br.Y-bH*pct); e.HBar.Visible=true
+                else
+                    e.HBG.Visible=false; e.HBar.Visible=false
+                end
+
+                local mx = (tl.X+br.X)/2
+
+                -- Label MUSUH/TEMAN
+                if Cfg.ShowLabel then
+                    e.Label.Text=lblTxt; e.Label.Position=Vector2.new(mx,tl.Y-27)
+                    e.Label.Color=lblCol; e.Label.Visible=true
+                else e.Label.Visible=false end
+
+                -- Name
+                if Cfg.ShowName then
+                    e.Name.Text=player.DisplayName; e.Name.Position=Vector2.new(mx,tl.Y-15)
+                    e.Name.Color=Cfg.Col_Nam; e.Name.Visible=true
+                else e.Name.Visible=false end
+
+                -- Distance
+                if Cfg.ShowDist then
+                    e.Dist.Text=string.format("[%dm]",math.floor(dist))
+                    e.Dist.Position=Vector2.new(mx,br.Y+3); e.Dist.Color=Cfg.Col_Dst; e.Dist.Visible=true
+                else e.Dist.Visible=false end
+            end
+        else
+            for _,v in pairs(e.C) do v.Visible=false end
+            e.Name.Visible=false; e.Label.Visible=false; e.Dist.Visible=false
+            e.HBG.Visible=false;  e.HBar.Visible=false
+        end
+
+        -- Tracer
+        if doTrace then
+            local oy = Cfg.TracerOrigin=="Bottom" and vp.Y
+                    or Cfg.TracerOrigin=="Top"    and 0 or vp.Y/2
+            e.Tracer.From=Vector2.new(center.X,oy); e.Tracer.To=rootSV
+            e.Tracer.Color=trcCol; e.Tracer.Thickness=Cfg.TracerThick; e.Tracer.Visible=true
+        else
+            e.Tracer.Visible=false
+        end
+    end
+end)
+
+-- ════════════════════════════════════════════════════════
+-- PLAYER HOOKS
+-- ════════════════════════════════════════════════════════
+Players.PlayerAdded:Connect(function(p)
+    MakeESP(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(0.8); RelCache[p]=nil
+        if not ESPMap[p] then MakeESP(p) end
+    end)
+end)
+Players.PlayerRemoving:Connect(function(p)
+    DestroyESP(p); RelCache[p]=nil
+end)
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LP then
+        MakeESP(p)
+        p.CharacterAdded:Connect(function()
+            task.wait(0.8); RelCache[p]=nil
+            if not ESPMap[p] then MakeESP(p) end
+        end)
+    end
+end
+
+-- ════════════════════════════════════════════════════════
+-- PREMIUM PANEL
+-- ════════════════════════════════════════════════════════
+pcall(function() game.CoreGui:FindFirstChild("OnyxPanel_v35"):Destroy() end)
+
+local SG = Instance.new("ScreenGui", game.CoreGui)
+SG.Name="OnyxPanel_v35"; SG.ResetOnSpawn=false
+SG.ZIndexBehavior=Enum.ZIndexBehavior.Sibling; SG.DisplayOrder=100
+
+local MF = Instance.new("Frame", SG)
+MF.Size=UDim2.new(0,295,0,630); MF.Position=UDim2.new(0,10,0.5,-315)
+MF.BackgroundColor3=Color3.fromRGB(8,8,14); MF.BorderSizePixel=0
+MF.Active=true; MF.Draggable=true
+Instance.new("UICorner",MF).CornerRadius=UDim.new(0,14)
+local S1=Instance.new("UIStroke",MF); S1.Color=Color3.fromRGB(140,40,255); S1.Thickness=1.8
+
+local GlowBar=Instance.new("Frame",MF)
+GlowBar.Size=UDim2.new(1,0,0,3); GlowBar.BackgroundColor3=Color3.fromRGB(170,55,255); GlowBar.BorderSizePixel=0
+
+local TB=Instance.new("Frame",MF)
+TB.Size=UDim2.new(1,0,0,42); TB.Position=UDim2.new(0,0,0,3)
+TB.BackgroundColor3=Color3.fromRGB(12,5,24); TB.BorderSizePixel=0
+
+local TL=Instance.new("TextLabel",TB)
+TL.Size=UDim2.new(1,-80,1,0); TL.Position=UDim2.new(0,12,0,0)
+TL.Text="⬡  ONYX v35  ·  MOBILE"; TL.Font=Enum.Font.GothamBold
+TL.TextSize=13; TL.TextColor3=Color3.fromRGB(180,70,255)
+TL.BackgroundTransparency=1; TL.TextXAlignment=Enum.TextXAlignment.Left
+
+local VB=Instance.new("TextLabel",TB)
+VB.Size=UDim2.new(0,34,0,18); VB.Position=UDim2.new(1,-82,0.5,-9)
+VB.Text="v35"; VB.Font=Enum.Font.GothamBold; VB.TextSize=10
+VB.TextColor3=Color3.new(1,1,1); VB.BackgroundColor3=Color3.fromRGB(120,30,240)
+VB.BorderSizePixel=0; Instance.new("UICorner",VB).CornerRadius=UDim.new(0,9)
+
+local MinB=Instance.new("TextButton",TB)
+MinB.Size=UDim2.new(0,28,0,28); MinB.Position=UDim2.new(1,-36,0.5,-14)
+MinB.Text="—"; MinB.Font=Enum.Font.GothamBold; MinB.TextSize=11
+MinB.TextColor3=Color3.new(1,1,1); MinB.BackgroundColor3=Color3.fromRGB(35,10,55)
+MinB.BorderSizePixel=0; Instance.new("UICorner",MinB).CornerRadius=UDim.new(0,7)
+
+local CF2=Instance.new("Frame",MF)
+CF2.Size=UDim2.new(1,0,1,-45); CF2.Position=UDim2.new(0,0,0,45); CF2.BackgroundTransparency=1
+
+MinB.MouseButton1Click:Connect(function()
+    CF2.Visible=not CF2.Visible
+    MF.Size=CF2.Visible and UDim2.new(0,295,0,630) or UDim2.new(0,295,0,45)
+end)
+
+local SC=Instance.new("ScrollingFrame",CF2)
+SC.Size=UDim2.new(1,-4,1,-4); SC.Position=UDim2.new(0,2,0,2)
+SC.BackgroundTransparency=1; SC.ScrollBarThickness=3
+SC.ScrollBarImageColor3=Color3.fromRGB(140,40,255)
+SC.CanvasSize=UDim2.new(0,0,0,0); SC.AutomaticCanvasSize=Enum.AutomaticSize.Y
+SC.BorderSizePixel=0
+
+local LL=Instance.new("UIListLayout",SC)
+LL.Padding=UDim.new(0,5); LL.SortOrder=Enum.SortOrder.LayoutOrder
+local PP=Instance.new("UIPadding",SC)
+PP.PaddingLeft=UDim.new(0,8); PP.PaddingRight=UDim.new(0,8); PP.PaddingTop=UDim.new(0,6)
+
+local function Sec(txt,col)
+    local f=Instance.new("Frame",SC)
+    f.Size=UDim2.new(1,0,0,26); f.BackgroundColor3=Color3.fromRGB(14,5,26); f.BorderSizePixel=0
+    Instance.new("UICorner",f).CornerRadius=UDim.new(0,7)
+    local l=Instance.new("TextLabel",f)
+    l.Size=UDim2.new(1,-10,1,0); l.Position=UDim2.new(0,10,0,0)
+    l.Text=txt; l.Font=Enum.Font.GothamBold; l.TextSize=11
+    l.TextColor3=col or Color3.fromRGB(155,50,255)
+    l.BackgroundTransparency=1; l.TextXAlignment=Enum.TextXAlignment.Left
+end
+
+local function Tog(lbl,key,cb)
+    local row=Instance.new("Frame",SC)
+    row.Size=UDim2.new(1,0,0,36); row.BackgroundColor3=Color3.fromRGB(15,15,22); row.BorderSizePixel=0
+    Instance.new("UICorner",row).CornerRadius=UDim.new(0,9)
+    local l=Instance.new("TextLabel",row)
+    l.Size=UDim2.new(1,-64,1,0); l.Position=UDim2.new(0,10,0,0)
+    l.Text=lbl; l.Font=Enum.Font.Gotham; l.TextSize=12
+    l.TextColor3=Color3.fromRGB(200,200,220); l.BackgroundTransparency=1; l.TextXAlignment=Enum.TextXAlignment.Left
+    local pill=Instance.new("Frame",row)
+    pill.Size=UDim2.new(0,48,0,26); pill.Position=UDim2.new(1,-56,0.5,-13); pill.BorderSizePixel=0
+    Instance.new("UICorner",pill).CornerRadius=UDim.new(0,13)
+    local knob=Instance.new("Frame",pill)
+    knob.Size=UDim2.new(0,20,0,20); knob.BorderSizePixel=0; knob.BackgroundColor3=Color3.new(1,1,1)
+    Instance.new("UICorner",knob).CornerRadius=UDim.new(0,10)
+    local btn=Instance.new("TextButton",pill)
+    btn.Size=UDim2.new(1,0,1,0); btn.BackgroundTransparency=1; btn.Text=""
+    local function R()
+        local on=Cfg[key]
+        pill.BackgroundColor3=on and Color3.fromRGB(115,28,240) or Color3.fromRGB(45,45,60)
+        knob.Position=on and UDim2.new(1,-23,0.5,-10) or UDim2.new(0,3,0.5,-10)
+    end; R()
+    btn.MouseButton1Click:Connect(function() Cfg[key]=not Cfg[key]; R(); if cb then cb(Cfg[key]) end end)
+end
+
+-- ── PANEL SECTIONS ──
+Sec("⬡  ESP",    Color3.fromRGB(255,60,60))
+Tog("ESP Active",           "ESP")
+Tog("Show Enemies",         "ESP_Enemy")
+Tog("Show Team",            "ESP_Team")
+Tog("Show Friends",         "ESP_Friend")
+Tog("Corner Box",           "ShowBox")
+Tog("Name Tag",             "ShowName")
+Tog("Label MUSUH/TEMAN",    "ShowLabel")
+Tog("Distance",             "ShowDist")
+Tog("Health Bar",           "ShowHealth")
+Tog("Off-Screen Arrow",     "ShowArrow")
+
+Sec("⬡  TRACER", Color3.fromRGB(255,60,60))
+Tog("Tracer Active",        "Tracer")
+Tog("Trace Enemy Only",     "Tracer_Enemy")
+Tog("Trace Team",           "Tracer_Team")
+Tog("Trace Friends",        "Tracer_Friend")
+
+Sec("⬡  AIM — 9 FITUR RARE", Color3.fromRGB(255,170,40))
+Tog("[1] Smooth Aim Assist",    "AimAssist")
+Tog("[2] Snap Aim (Hard Lock)", "SnapAim")
+Tog("[3] Silent Aim",           "SilentAim")
+Tog("[4] Auto Shoot Mobile",    "AutoShoot")
+Tog("[5] Prediction Aim",       "PredictAim")
+Tog("[6] Auto Flick",           "AutoFlick")
+Tog("[7] FOV Priority Target",  "FOVPriority")
+Tog("[8] Head Snap Delay",      "HeadSnapDelay")
+Tog("[9] Auto Closest Bone",    "AutoBone")
+
+Sec("⬡  VISUAL", Color3.fromRGB(140,200,255))
+Tog("Crosshair",            "ShowCrosshair")
+Tog("FOV Circle",           "ShowFOV")
+
+Sec("⬡  MOVEMENT", Color3.fromRGB(50,255,120))
+Tog("Bunny Hop",            "BunnyHop")
+Tog("Auto Slide",           "AutoSlide")
+Tog("Speed Boost",          "SpeedBoost")
+
+local ft=Instance.new("TextLabel",CF2)
+ft.Size=UDim2.new(1,0,0,18); ft.Position=UDim2.new(0,0,1,-20)
+ft.Text="ONYX v35  ·  9 rare aims  ·  6767"
+ft.Font=Enum.Font.Gotham; ft.TextSize=10
+ft.TextColor3=Color3.fromRGB(75,38,120); ft.BackgroundTransparency=1
+
+print("[ONYX v35] Nuclear loaded. 6767 gng.")
