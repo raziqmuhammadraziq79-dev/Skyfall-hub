@@ -1,0 +1,637 @@
+-- // ONYX ESP SUITE v20 | DELTA COMPATIBLE | MOBILE/PC
+-- // Arsenal / Arena / FPS Support | All-in-One Premium
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+-- // CONFIG
+local Config = {
+    -- ESP
+    ESP_Enabled = true,
+    ESP_Enemies = true,
+    ESP_Team = true,
+    ESP_Friends = false,
+
+    -- Tracer
+    Tracer_Enabled = true,
+    Tracer_Enemies = true,
+    Tracer_Team = false,
+    Tracer_Friends = false,
+    TracerOrigin = "Bottom", -- "Bottom" | "Center" | "Top"
+
+    -- Aimbot
+    Aimbot_Enabled = true,
+    AimPart = "Head",
+    AimFOV = 180,
+    AimSmoothing = 0.08, -- lower = faster lock
+    SilentAim = true,
+    AimAssist = true,
+    AimAssist_Strength = 0.12,
+    AutoLock = true,
+
+    -- BunnyHop + AutoSlide
+    BunnyHop = true,
+    AutoSlide = true,
+
+    -- Colors
+    Color_Enemy = Color3.fromRGB(255, 60, 60),
+    Color_Team = Color3.fromRGB(60, 200, 255),
+    Color_Friend = Color3.fromRGB(60, 255, 120),
+    Color_Tracer_Enemy = Color3.fromRGB(255, 50, 50),
+    Color_Tracer_Team = Color3.fromRGB(50, 200, 255),
+    Color_Tracer_Friend = Color3.fromRGB(50, 255, 100),
+    Color_Box = Color3.fromRGB(255, 255, 255),
+    Color_Name = Color3.fromRGB(255, 255, 255),
+    Color_Distance = Color3.fromRGB(255, 220, 50),
+
+    -- Misc
+    MaxDistance = 1000,
+    ShowName = true,
+    ShowDistance = true,
+    ShowBox = true,
+    ShowHealthBar = true,
+}
+
+-- // DRAWING POOL
+local Drawings = {}
+
+local function NewDrawing(type, props)
+    local d = Drawing.new(type)
+    for k, v in pairs(props) do d[k] = v end
+    table.insert(Drawings, d)
+    return d
+end
+
+local function RemoveDrawing(d)
+    if d then
+        d.Visible = false
+        d:Remove()
+    end
+end
+
+-- // UTILITY
+local function GetTeam(player)
+    return player.Team
+end
+
+local function IsEnemy(player)
+    if player == LocalPlayer then return false end
+    if LocalPlayer.Team and player.Team then
+        return player.Team ~= LocalPlayer.Team
+    end
+    return true
+end
+
+local function IsFriend(player)
+    return LocalPlayer:IsFriendsWith(player.UserId)
+end
+
+local function IsTeam(player)
+    if player == LocalPlayer then return false end
+    if LocalPlayer.Team and player.Team then
+        return player.Team == LocalPlayer.Team
+    end
+    return false
+end
+
+local function GetCharacter(player)
+    return player.Character
+end
+
+local function GetRoot(char)
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetHead(char)
+    return char and char:FindFirstChild("Head")
+end
+
+local function GetHumanoid(char)
+    return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function WorldToViewport(pos)
+    local screen, onScreen = Camera:WorldToViewportPoint(pos)
+    return Vector2.new(screen.X, screen.Y), onScreen, screen.Z
+end
+
+local function GetBoundingBox(char)
+    local min, max = Vector3.new(math.huge, math.huge, math.huge), Vector3.new(-math.huge, -math.huge, -math.huge)
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            local cf = part.CFrame
+            local size = part.Size / 2
+            for _, corner in pairs({
+                cf * Vector3.new(size.X, size.Y, size.Z),
+                cf * Vector3.new(-size.X, size.Y, size.Z),
+                cf * Vector3.new(size.X, -size.Y, size.Z),
+                cf * Vector3.new(-size.X, -size.Y, size.Z),
+                cf * Vector3.new(size.X, size.Y, -size.Z),
+                cf * Vector3.new(-size.X, size.Y, -size.Z),
+                cf * Vector3.new(size.X, -size.Y, -size.Z),
+                cf * Vector3.new(-size.X, -size.Y, -size.Z),
+            }) do
+                min = Vector3.new(math.min(min.X, corner.X), math.min(min.Y, corner.Y), math.min(min.Z, corner.Z))
+                max = Vector3.new(math.max(max.X, corner.X), math.max(max.Y, corner.Y), math.max(max.Z, corner.Z))
+            end
+        end
+    end
+    return min, max
+end
+
+-- // ESP STORAGE
+local ESPObjects = {}
+
+local function CreateESP(player)
+    ESPObjects[player] = {
+        Box = {
+            TL = NewDrawing("Line", {Thickness=1.5, ZIndex=5, Visible=false}),
+            TR = NewDrawing("Line", {Thickness=1.5, ZIndex=5, Visible=false}),
+            BL = NewDrawing("Line", {Thickness=1.5, ZIndex=5, Visible=false}),
+            BR = NewDrawing("Line", {Thickness=1.5, ZIndex=5, Visible=false}),
+            Top = NewDrawing("Line", {Thickness=1.5, ZIndex=5, Visible=false}),
+            Bot = NewDrawing("Line", {Thickness=1.5, ZIndex=5, Visible=false}),
+            Left = NewDrawing("Line", {Thickness=1.5, ZIndex=5, Visible=false}),
+            Right = NewDrawing("Line", {Thickness=1.5, ZIndex=5, Visible=false}),
+        },
+        Name = NewDrawing("Text", {Size=14, Center=true, Outline=true, ZIndex=5, Visible=false}),
+        Distance = NewDrawing("Text", {Size=12, Center=true, Outline=true, ZIndex=5, Visible=false}),
+        HealthBar = NewDrawing("Line", {Thickness=4, ZIndex=5, Visible=false}),
+        HealthBarBG = NewDrawing("Line", {Thickness=4, ZIndex=4, Visible=false, Color=Color3.fromRGB(0,0,0)}),
+        Tracer = NewDrawing("Line", {Thickness=1.2, ZIndex=5, Visible=false}),
+    }
+end
+
+local function RemoveESP(player)
+    if ESPObjects[player] then
+        for _, obj in pairs(ESPObjects[player]) do
+            if type(obj) == "table" then
+                for _, line in pairs(obj) do RemoveDrawing(line) end
+            else
+                RemoveDrawing(obj)
+            end
+        end
+        ESPObjects[player] = nil
+    end
+end
+
+-- // CORNER BOX DRAW
+local function DrawCornerBox(box, topLeft, topRight, botLeft, botRight, color, alpha)
+    local cw = (topRight.X - topLeft.X) * 0.25
+    local ch = (botLeft.Y - topLeft.Y) * 0.25
+
+    box.TL.From = topLeft; box.TL.To = topLeft + Vector2.new(cw, 0); box.TL.Color = color; box.TL.Transparency = alpha
+    box.TR.From = topRight; box.TR.To = topRight - Vector2.new(cw, 0); box.TR.Color = color; box.TR.Transparency = alpha
+    box.BL.From = botLeft; box.BL.To = botLeft + Vector2.new(cw, 0); box.BL.Color = color; box.BL.Transparency = alpha
+    box.BR.From = botRight; box.BR.To = botRight - Vector2.new(cw, 0); box.BR.Color = color; box.BR.Transparency = alpha
+
+    box.Top.From = topLeft; box.Top.To = topLeft + Vector2.new(0, ch); box.Top.Color = color; box.Top.Transparency = alpha
+    box.Bot.From = botLeft; box.Bot.To = botLeft - Vector2.new(0, ch); box.Bot.Color = color; box.Bot.Transparency = alpha
+    box.Left.From = topRight; box.Left.To = topRight + Vector2.new(0, ch); box.Left.Color = color; box.Left.Transparency = alpha
+    box.Right.From = botRight; box.Right.To = botRight - Vector2.new(0, ch); box.Right.Color = color; box.Right.Transparency = alpha
+
+    for _, line in pairs(box) do line.Visible = true end
+end
+
+-- // AIMBOT TARGET
+local AimbotTarget = nil
+
+local function GetClosestTarget()
+    local bestDist = math.huge
+    local bestPlayer = nil
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and IsEnemy(player) then
+            local char = GetCharacter(player)
+            local hum = GetHumanoid(char)
+            if char and hum and hum.Health > 0 then
+                local part = char:FindFirstChild(Config.AimPart) or GetRoot(char)
+                if part then
+                    local screen, onScreen = WorldToViewport(part.Position)
+                    if onScreen then
+                        local dist = (screen - center).Magnitude
+                        if dist < Config.AimFOV and dist < bestDist then
+                            bestDist = dist
+                            bestPlayer = player
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return bestPlayer
+end
+
+-- // SILENT AIM HOOK
+if Config.SilentAim then
+    local mt = getrawmetatable(game)
+    local old = mt.__index
+    setreadonly(mt, false)
+    mt.__index = newcclosure(function(self, key)
+        if key == "Hit" and self == LocalPlayer:GetMouse() then
+            local target = GetClosestTarget()
+            if target and Config.Aimbot_Enabled then
+                local char = GetCharacter(target)
+                local part = char and (char:FindFirstChild(Config.AimPart) or GetRoot(char))
+                if part then
+                    local fakeCF = CFrame.new(part.Position)
+                    return fakeCF
+                end
+            end
+        end
+        return old(self, key)
+    end)
+    setreadonly(mt, true)
+end
+
+-- // BUNNY HOP + AUTO SLIDE
+if Config.BunnyHop or Config.AutoSlide then
+    RunService.Heartbeat:Connect(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hum = GetHumanoid(char)
+        local root = GetRoot(char)
+        if not hum or not root then return end
+
+        -- BunnyHop
+        if Config.BunnyHop then
+            if hum.FloorMaterial ~= Enum.Material.Air then
+                hum.Jump = true
+            end
+        end
+
+        -- AutoSlide
+        if Config.AutoSlide then
+            local speed = root.Velocity.Magnitude
+            if speed > 20 and hum.MoveDirection.Magnitude > 0 then
+                if hum.FloorMaterial ~= Enum.Material.Air then
+                    hum:ChangeState(Enum.HumanoidStateType.Running)
+                end
+            end
+        end
+    end)
+end
+
+-- // MAIN LOOP
+RunService.RenderStepped:Connect(function()
+    if not Config.ESP_Enabled and not Config.Tracer_Enabled and not Config.Aimbot_Enabled then return end
+
+    -- Aimbot AutoLock
+    if Config.Aimbot_Enabled and Config.AutoLock then
+        AimbotTarget = GetClosestTarget()
+        if AimbotTarget then
+            local char = GetCharacter(AimbotTarget)
+            local part = char and (char:FindFirstChild(Config.AimPart) or GetRoot(char))
+            if part then
+                local screen, onScreen = WorldToViewport(part.Position)
+                if onScreen then
+                    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+                    local delta = screen - center
+
+                    -- AimAssist (smooth camera nudge)
+                    if Config.AimAssist then
+                        local cf = Camera.CFrame
+                        local targetCF = CFrame.new(cf.Position, part.Position)
+                        Camera.CFrame = cf:Lerp(targetCF, Config.AimAssist_Strength)
+                    end
+
+                    -- Hard AutoLock Aimbot
+                    if not Config.AimAssist then
+                        local cf = Camera.CFrame
+                        local targetCF = CFrame.new(cf.Position, part.Position)
+                        Camera.CFrame = cf:Lerp(targetCF, Config.AimSmoothing)
+                    end
+                end
+            end
+        end
+    end
+
+    -- ESP Loop
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        local esp = ESPObjects[player]
+        if not esp then continue end
+
+        local char = GetCharacter(player)
+        local hum = GetHumanoid(char)
+        local root = GetRoot(char)
+
+        local isEnemy = IsEnemy(player)
+        local isTeam = IsTeam(player)
+        local isFriend = IsFriend(player)
+
+        local showESP = (Config.ESP_Enemies and isEnemy) or
+                        (Config.ESP_Team and isTeam) or
+                        (Config.ESP_Friends and isFriend)
+
+        local showTrace = (Config.Tracer_Enemies and isEnemy) or
+                          (Config.Tracer_Team and isTeam) or
+                          (Config.Tracer_Friends and isFriend)
+
+        if not char or not hum or hum.Health <= 0 or not root then
+            for _, obj in pairs(esp) do
+                if type(obj) == "table" then for _, l in pairs(obj) do l.Visible = false end
+                else obj.Visible = false end
+            end
+            continue
+        end
+
+        local rootPos, onScreen, depth = WorldToViewport(root.Position)
+        local dist = (root.Position - Camera.CFrame.Position).Magnitude
+
+        if not onScreen or dist > Config.MaxDistance or not showESP then
+            for _, obj in pairs(esp) do
+                if type(obj) == "table" then for _, l in pairs(obj) do l.Visible = false end
+                else obj.Visible = false end
+            end
+            continue
+        end
+
+        local color = isEnemy and Config.Color_Enemy or (isTeam and Config.Color_Team or Config.Color_Friend)
+        local tracerColor = isEnemy and Config.Color_Tracer_Enemy or (isTeam and Config.Color_Tracer_Team or Config.Color_Tracer_Friend)
+
+        -- Box ESP
+        if Config.ShowBox then
+            local minB, maxB = GetBoundingBox(char)
+            local corners = {
+                Vector3.new(minB.X, minB.Y, minB.Z),
+                Vector3.new(maxB.X, minB.Y, minB.Z),
+                Vector3.new(minB.X, maxB.Y, minB.Z),
+                Vector3.new(maxB.X, maxB.Y, minB.Z),
+                Vector3.new(minB.X, minB.Y, maxB.Z),
+                Vector3.new(maxB.X, minB.Y, maxB.Z),
+                Vector3.new(minB.X, maxB.Y, maxB.Z),
+                Vector3.new(maxB.X, maxB.Y, maxB.Z),
+            }
+            local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
+            local allOnScreen = true
+            for _, c in pairs(corners) do
+                local sv, os = WorldToViewport(c)
+                if not os then allOnScreen = false end
+                minX = math.min(minX, sv.X)
+                minY = math.min(minY, sv.Y)
+                maxX = math.max(maxX, sv.X)
+                maxY = math.max(maxY, sv.Y)
+            end
+
+            local tl = Vector2.new(minX, minY)
+            local tr = Vector2.new(maxX, minY)
+            local bl = Vector2.new(minX, maxY)
+            local br = Vector2.new(maxX, maxY)
+
+            DrawCornerBox(esp.Box, tl, tr, bl, br, color, 1)
+
+            -- Health Bar
+            if Config.ShowHealthBar then
+                local healthPct = hum.Health / hum.MaxHealth
+                local barH = maxY - minY
+                local barX = minX - 6
+                esp.HealthBarBG.From = Vector2.new(barX, minY)
+                esp.HealthBarBG.To = Vector2.new(barX, maxY)
+                esp.HealthBarBG.Visible = true
+
+                local hColor = Color3.fromRGB(255 * (1 - healthPct), 255 * healthPct, 0)
+                esp.HealthBar.From = Vector2.new(barX, maxY)
+                esp.HealthBar.To = Vector2.new(barX, maxY - barH * healthPct)
+                esp.HealthBar.Color = hColor
+                esp.HealthBar.Visible = true
+            else
+                esp.HealthBar.Visible = false
+                esp.HealthBarBG.Visible = false
+            end
+
+            -- Name
+            if Config.ShowName then
+                esp.Name.Text = player.DisplayName
+                esp.Name.Position = Vector2.new((minX + maxX) / 2, minY - 16)
+                esp.Name.Color = Config.Color_Name
+                esp.Name.Visible = true
+            else
+                esp.Name.Visible = false
+            end
+
+            -- Distance
+            if Config.ShowDistance then
+                esp.Distance.Text = string.format("[%dm]", math.floor(dist))
+                esp.Distance.Position = Vector2.new((minX + maxX) / 2, maxY + 2)
+                esp.Distance.Color = Config.Color_Distance
+                esp.Distance.Visible = true
+            else
+                esp.Distance.Visible = false
+            end
+        end
+
+        -- Tracer
+        if Config.Tracer_Enabled and showTrace then
+            local vp = Camera.ViewportSize
+            local originPos
+            if Config.TracerOrigin == "Bottom" then
+                originPos = Vector2.new(vp.X / 2, vp.Y)
+            elseif Config.TracerOrigin == "Top" then
+                originPos = Vector2.new(vp.X / 2, 0)
+            else
+                originPos = Vector2.new(vp.X / 2, vp.Y / 2)
+            end
+            esp.Tracer.From = originPos
+            esp.Tracer.To = rootPos
+            esp.Tracer.Color = tracerColor
+            esp.Tracer.Thickness = 1.2
+            esp.Tracer.Visible = true
+        else
+            esp.Tracer.Visible = false
+        end
+    end
+end)
+
+-- // PLAYER ADD/REMOVE
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        CreateESP(player)
+    end)
+    CreateESP(player)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    RemoveESP(player)
+end)
+
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        CreateESP(player)
+    end
+end
+
+-- // PREMIUM ADMIN PANEL UI
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+ScreenGui.Name = "OnyxPanel_v20"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 320, 0, 520)
+MainFrame.Position = UDim2.new(0, 16, 0.5, -260)
+MainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+
+local Stroke = Instance.new("UIStroke", MainFrame)
+Stroke.Color = Color3.fromRGB(180, 60, 255)
+Stroke.Thickness = 1.5
+
+-- Title Bar
+local TitleBar = Instance.new("Frame", MainFrame)
+TitleBar.Size = UDim2.new(1, 0, 0, 36)
+TitleBar.BackgroundColor3 = Color3.fromRGB(22, 12, 38)
+TitleBar.BorderSizePixel = 0
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
+
+local TitleLabel = Instance.new("TextLabel", TitleBar)
+TitleLabel.Size = UDim2.new(1, -50, 1, 0)
+TitleLabel.Position = UDim2.new(0, 12, 0, 0)
+TitleLabel.Text = "⬡ ONYX v20 | DELTA"
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextSize = 14
+TitleLabel.TextColor3 = Color3.fromRGB(200, 100, 255)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Minimize
+local MinBtn = Instance.new("TextButton", TitleBar)
+MinBtn.Size = UDim2.new(0, 30, 0, 30)
+MinBtn.Position = UDim2.new(1, -40, 0, 3)
+MinBtn.Text = "—"
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextSize = 14
+MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinBtn.BackgroundColor3 = Color3.fromRGB(50, 20, 70)
+MinBtn.BorderSizePixel = 0
+Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 6)
+
+local ContentFrame = Instance.new("Frame", MainFrame)
+ContentFrame.Size = UDim2.new(1, 0, 1, -36)
+ContentFrame.Position = UDim2.new(0, 0, 0, 36)
+ContentFrame.BackgroundTransparency = 1
+
+MinBtn.MouseButton1Click:Connect(function()
+    ContentFrame.Visible = not ContentFrame.Visible
+    MainFrame.Size = ContentFrame.Visible and UDim2.new(0, 320, 0, 520) or UDim2.new(0, 320, 0, 36)
+end)
+
+-- Scroll
+local Scroll = Instance.new("ScrollingFrame", ContentFrame)
+Scroll.Size = UDim2.new(1, 0, 1, -8)
+Scroll.Position = UDim2.new(0, 0, 0, 4)
+Scroll.BackgroundTransparency = 1
+Scroll.ScrollBarThickness = 3
+Scroll.ScrollBarImageColor3 = Color3.fromRGB(180, 60, 255)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+local Layout = Instance.new("UIListLayout", Scroll)
+Layout.Padding = UDim.new(0, 6)
+Layout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local Padding = Instance.new("UIPadding", Scroll)
+Padding.PaddingLeft = UDim.new(0, 10)
+Padding.PaddingRight = UDim.new(0, 10)
+Padding.PaddingTop = UDim.new(0, 6)
+
+-- Section / Toggle Builder
+local function Section(name)
+    local lbl = Instance.new("TextLabel", Scroll)
+    lbl.Size = UDim2.new(1, 0, 0, 22)
+    lbl.Text = "  " .. name
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 11
+    lbl.TextColor3 = Color3.fromRGB(180, 60, 255)
+    lbl.BackgroundColor3 = Color3.fromRGB(22, 12, 38)
+    lbl.BorderSizePixel = 0
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    Instance.new("UICorner", lbl).CornerRadius = UDim.new(0, 6)
+    return lbl
+end
+
+local function Toggle(parent, label, configKey, callback)
+    local row = Instance.new("Frame", parent)
+    row.Size = UDim2.new(1, 0, 0, 32)
+    row.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    row.BorderSizePixel = 0
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 7)
+
+    local lbl = Instance.new("TextLabel", row)
+    lbl.Size = UDim2.new(1, -60, 1, 0)
+    lbl.Position = UDim2.new(0, 10, 0, 0)
+    lbl.Text = label
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 13
+    lbl.TextColor3 = Color3.fromRGB(220, 220, 240)
+    lbl.BackgroundTransparency = 1
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+    local btn = Instance.new("TextButton", row)
+    btn.Size = UDim2.new(0, 44, 0, 22)
+    btn.Position = UDim2.new(1, -54, 0.5, -11)
+    btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(140, 40, 255) or Color3.fromRGB(50, 50, 65)
+    btn.Text = Config[configKey] and "ON" or "OFF"
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 11
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.BorderSizePixel = 0
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 11)
+
+    btn.MouseButton1Click:Connect(function()
+        Config[configKey] = not Config[configKey]
+        btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(140, 40, 255) or Color3.fromRGB(50, 50, 65)
+        btn.Text = Config[configKey] and "ON" or "OFF"
+        if callback then callback(Config[configKey]) end
+    end)
+
+    return row
+end
+
+-- Build Panel
+Section("⬡ ESP")
+Toggle(Scroll, "ESP Enabled", "ESP_Enabled")
+Toggle(Scroll, "Show Enemies", "ESP_Enemies")
+Toggle(Scroll, "Show Team", "ESP_Team")
+Toggle(Scroll, "Show Friends", "ESP_Friends")
+Toggle(Scroll, "Corner Box", "ShowBox")
+Toggle(Scroll, "Name Tag", "ShowName")
+Toggle(Scroll, "Distance", "ShowDistance")
+Toggle(Scroll, "Health Bar", "ShowHealthBar")
+
+Section("⬡ TRACER")
+Toggle(Scroll, "Tracer Enabled", "Tracer_Enabled")
+Toggle(Scroll, "Trace Enemy", "Tracer_Enemies")
+Toggle(Scroll, "Trace Team", "Tracer_Team")
+Toggle(Scroll, "Trace Friends", "Tracer_Friends")
+
+Section("⬡ AIMBOT")
+Toggle(Scroll, "Aimbot Enabled", "Aimbot_Enabled")
+Toggle(Scroll, "Auto Lock", "AutoLock")
+Toggle(Scroll, "Silent Aim", "SilentAim")
+Toggle(Scroll, "Aim Assist", "AimAssist")
+
+Section("⬡ MOVEMENT")
+Toggle(Scroll, "Bunny Hop", "BunnyHop")
+Toggle(Scroll, "Auto Slide", "AutoSlide")
+
+-- Footer
+local footer = Instance.new("TextLabel", ContentFrame)
+footer.Size = UDim2.new(1, 0, 0, 20)
+footer.Position = UDim2.new(0, 0, 1, -22)
+footer.Text = "ONYX v20  |  drag panel to move"
+footer.Font = Enum.Font.Gotham
+footer.TextSize = 10
+footer.TextColor3 = Color3.fromRGB(100, 60, 160)
+footer.BackgroundTransparency = 1
+
+print("[ONYX v20] Loaded. 6767")
