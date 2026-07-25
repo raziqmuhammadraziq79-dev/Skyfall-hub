@@ -1,0 +1,658 @@
+-- ONYX v30 ULTRA CLEAN
+-- Delta Executor Compatible (Android/iOS)
+-- Fixed: No forced aim pull | Username Target Lock | Tracer | Rare Features
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+-- ══════════════════════════════════
+-- CONFIG
+-- ══════════════════════════════════
+local Config = {
+    ESP = {
+        Enabled = true,
+        BoxColor = Color3.fromRGB(255, 50, 50),
+        TraceColor = Color3.fromRGB(255, 200, 0),
+        TracerColor = Color3.fromRGB(0, 200, 255),   -- khusus target lock
+        NameColor = Color3.fromRGB(255, 255, 255),
+        BoxThickness = 1.5,
+        TraceThickness = 1,
+        TracerThickness = 2.5,
+        ShowName = true,
+        ShowHealth = true,
+        ShowDistance = true,
+        ShowTracer = true,  -- tracer khusus target lock
+    },
+    Aimbot = {
+        Enabled = false,        -- OFF by default, user yg aktifin
+        TargetPart = "Head",
+        Smoothness = 0.08,      -- RENDAH = smooth banget, ga nge-pull paksa
+        Prediction = true,
+        PredictionFactor = 0.10,
+        AutoLock = true,
+        FOV = 9999,
+        SilentAim = false,
+        SnapOnSight = false,    -- OFF default biar ga ganggu aim manual
+        SnapThreshold = 60,
+        -- KUNCI: aimbot hanya aktif kalau user hold tombol
+        RequireHold = true,     -- true = aimbot aktif HANYA saat hold, false = always on
+        HoldKey = Enum.KeyCode.E, -- hold E buat aktifin aimbot assist
+    },
+    TargetLock = {
+        Enabled = false,
+        Username = "",          -- isi username target
+        TracerFromBottom = true,
+        PingDisplay = true,
+    },
+    Panel = {
+        Visible = true,
+    }
+}
+
+-- ══════════════════════════════════
+-- STATE
+-- ══════════════════════════════════
+local ESPObjects = {}
+local LockedTarget = nil        -- aimbot nearest
+local PinnedTarget = nil        -- target lock by username
+local TargetCache = {}
+local LastCacheTime = 0
+local CacheInterval = 0.05
+local IsHolding = false
+local PanelOpen = true
+
+-- ══════════════════════════════════
+-- UTILS
+-- ══════════════════════════════════
+local function isEnemy(player)
+    if player == LocalPlayer then return false end
+    local char = player.Character
+    if not char then return false end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    if not char:FindFirstChild("HumanoidRootPart") then return false end
+    return true
+end
+
+local function getScreenPos(worldPos)
+    local sp, onScreen = Camera:WorldToViewportPoint(worldPos)
+    return Vector2.new(sp.X, sp.Y), onScreen, sp.Z
+end
+
+local function getDistance(player)
+    local char = player.Character
+    local lchar = LocalPlayer.Character
+    if not char or not lchar then return 0 end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local lhrp = lchar:FindFirstChild("HumanoidRootPart")
+    if not hrp or not lhrp then return 0 end
+    return math.floor((hrp.Position - lhrp.Position).Magnitude)
+end
+
+local function getCharBox(character)
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local top = hrp.Position + Vector3.new(0, 3.5, 0)
+    local bot = hrp.Position + Vector3.new(0, -3.2, 0)
+    local topS, onScreen = getScreenPos(top)
+    local botS = getScreenPos(bot)
+    if not onScreen then return nil end
+    local h = math.abs(topS.Y - botS.Y)
+    return {
+        topScreen = topS,
+        botScreen = botS,
+        height = h,
+        width = h * 0.55,
+    }
+end
+
+-- ══════════════════════════════════
+-- USERNAME PARTIAL MATCH
+-- cukup ketik "nob" → match "NobodyXD123"
+-- ══════════════════════════════════
+local function findPlayerByPartialName(partial)
+    if partial == "" then return nil end
+    local lower = partial:lower()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if p.Name:lower():find(lower, 1, true) or
+               p.DisplayName:lower():find(lower, 1, true) then
+                return p
+            end
+        end
+    end
+    return nil
+end
+
+-- ══════════════════════════════════
+-- TARGET CACHE (50ms refresh)
+-- ══════════════════════════════════
+local function refreshCache()
+    local now = tick()
+    if now - LastCacheTime < CacheInterval then return end
+    LastCacheTime = now
+    TargetCache = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if isEnemy(p) then
+            local head = p.Character:FindFirstChild("Head")
+            if head then
+                local sp, onScreen, depth = getScreenPos(head.Position)
+                if onScreen and depth > 0 then
+                    local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                    table.insert(TargetCache, {
+                        player   = p,
+                        screenPos = sp,
+                        depth    = depth,
+                        worldPos = head.Position,
+                        velocity = hrp and hrp.Velocity or Vector3.zero,
+                    })
+                end
+            end
+        end
+    end
+end
+
+local function getNearestEnemy()
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local closest, closestDist = nil, Config.Aimbot.FOV
+    for _, data in ipairs(TargetCache) do
+        local d = (data.screenPos - center).Magnitude
+        if d < closestDist then
+            closestDist = d
+            closest = data
+        end
+    end
+    return closest
+end
+
+-- ══════════════════════════════════
+-- HOLD KEY DETECTION
+-- ══════════════════════════════════
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Config.Aimbot.HoldKey then
+        IsHolding = true
+    end
+    if input.KeyCode == Enum.KeyCode.Minus then
+        -- toggle panel
+        PanelOpen = not PanelOpen
+        for _, child in ipairs(_G.MainFrame:GetChildren()) do
+            if child ~= _G.HideBtn and child ~= _G.TitleBar and not child:IsA("UICorner") then
+                if child:IsA("GuiObject") then child.Visible = PanelOpen end
+            end
+        end
+        _G.MainFrame.Size = PanelOpen
+            and UDim2.new(0, 280, 0, 560)
+            or  UDim2.new(0, 280, 0, 86)
+        _G.HideBtn.Visible = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Config.Aimbot.HoldKey then
+        IsHolding = false
+    end
+end)
+
+-- ══════════════════════════════════
+-- ESP DRAWING FACTORY
+-- ══════════════════════════════════
+local function newLine(color, thickness)
+    local l = Drawing.new("Line")
+    l.Color = color
+    l.Thickness = thickness
+    l.Visible = false
+    return l
+end
+
+local function newText(size, color)
+    local t = Drawing.new("Text")
+    t.Size = size
+    t.Color = color
+    t.Outline = true
+    t.Center = true
+    t.Visible = false
+    return t
+end
+
+local function createESP(player)
+    ESPObjects[player] = {
+        box   = { newLine(Config.ESP.BoxColor, Config.ESP.BoxThickness),
+                  newLine(Config.ESP.BoxColor, Config.ESP.BoxThickness),
+                  newLine(Config.ESP.BoxColor, Config.ESP.BoxThickness),
+                  newLine(Config.ESP.BoxColor, Config.ESP.BoxThickness) },
+        trace  = newLine(Config.ESP.TraceColor, Config.ESP.TraceThickness),
+        tracer = newLine(Config.ESP.TracerColor, Config.ESP.TracerThickness),
+        name   = newText(13, Config.ESP.NameColor),
+        health = newLine(Color3.fromRGB(0,255,0), 3),
+        dist   = newText(11, Color3.fromRGB(180,180,255)),
+        corner = { -- corner bracket style
+            newLine(Color3.fromRGB(255,80,80), 2),
+            newLine(Color3.fromRGB(255,80,80), 2),
+            newLine(Color3.fromRGB(255,80,80), 2),
+            newLine(Color3.fromRGB(255,80,80), 2),
+            newLine(Color3.fromRGB(255,80,80), 2),
+            newLine(Color3.fromRGB(255,80,80), 2),
+            newLine(Color3.fromRGB(255,80,80), 2),
+            newLine(Color3.fromRGB(255,80,80), 2),
+        },
+    }
+end
+
+local function removeESP(player)
+    if not ESPObjects[player] then return end
+    local d = ESPObjects[player]
+    for _, l in ipairs(d.box) do l:Remove() end
+    d.trace:Remove()
+    d.tracer:Remove()
+    d.name:Remove()
+    d.health:Remove()
+    d.dist:Remove()
+    for _, l in ipairs(d.corner) do l:Remove() end
+    ESPObjects[player] = nil
+end
+
+local function hideAll(d)
+    for _, l in ipairs(d.box) do l.Visible = false end
+    d.trace.Visible = false
+    d.tracer.Visible = false
+    d.name.Visible = false
+    d.health.Visible = false
+    d.dist.Visible = false
+    for _, l in ipairs(d.corner) do l.Visible = false end
+end
+
+local function drawCornerBox(d, x, y, w, h)
+    -- corner bracket, bukan full box
+    local cs = math.floor(w * 0.25) -- corner size
+    local c = d.corner
+    -- top-left
+    c[1].From = Vector2.new(x, y)        c[1].To = Vector2.new(x+cs, y)        c[1].Visible = true
+    c[2].From = Vector2.new(x, y)        c[2].To = Vector2.new(x, y+cs)        c[2].Visible = true
+    -- top-right
+    c[3].From = Vector2.new(x+w, y)      c[3].To = Vector2.new(x+w-cs, y)      c[3].Visible = true
+    c[4].From = Vector2.new(x+w, y)      c[4].To = Vector2.new(x+w, y+cs)      c[4].Visible = true
+    -- bot-left
+    c[5].From = Vector2.new(x, y+h)      c[5].To = Vector2.new(x+cs, y+h)      c[5].Visible = true
+    c[6].From = Vector2.new(x, y+h)      c[6].To = Vector2.new(x, y+h-cs)      c[6].Visible = true
+    -- bot-right
+    c[7].From = Vector2.new(x+w, y+h)    c[7].To = Vector2.new(x+w-cs, y+h)    c[7].Visible = true
+    c[8].From = Vector2.new(x+w, y+h)    c[8].To = Vector2.new(x+w, y+h-cs)    c[8].Visible = true
+end
+
+local function updateESP()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if isEnemy(player) then
+            if not ESPObjects[player] then createESP(player) end
+            local d   = ESPObjects[player]
+            local box = getCharBox(player.Character)
+            local hum = player.Character:FindFirstChild("Humanoid")
+            local hp  = hum and (hum.Health / math.max(hum.MaxHealth,1)) or 0
+            local screenBot = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+            local isPinned = (PinnedTarget == player)
+
+            if box and Config.ESP.Enabled then
+                local x = box.topScreen.X - box.width/2
+                local y = box.topScreen.Y
+                local w = box.width
+                local h = box.height
+
+                -- Corner bracket box (lebih clean dari full box)
+                drawCornerBox(d, x, y, w, h)
+
+                -- Trace (semua enemy)
+                d.trace.From = screenBot
+                d.trace.To   = box.botScreen
+                d.trace.Color = isPinned and Config.ESP.TracerColor or Config.ESP.TraceColor
+                d.trace.Visible = true
+
+                -- Tracer khusus pinned target (tebal, beda warna)
+                if isPinned and Config.ESP.ShowTracer then
+                    d.tracer.From = screenBot
+                    d.tracer.To   = box.topScreen
+                    d.tracer.Visible = true
+                else
+                    d.tracer.Visible = false
+                end
+
+                -- Name
+                if Config.ESP.ShowName then
+                    local tag = isPinned and ("🎯 "..player.DisplayName) or player.DisplayName
+                    d.name.Text = tag
+                    d.name.Position = Vector2.new(box.topScreen.X, y - 16)
+                    d.name.Color = isPinned and Color3.fromRGB(0,220,255) or Config.ESP.NameColor
+                    d.name.Visible = true
+                end
+
+                -- Health bar
+                if Config.ESP.ShowHealth then
+                    local barH = h * hp
+                    d.health.From = Vector2.new(x-5, y+h)
+                    d.health.To   = Vector2.new(x-5, y+h-barH)
+                    d.health.Color = Color3.fromRGB(
+                        math.floor(255*(1-hp)),
+                        math.floor(255*hp),
+                        0
+                    )
+                    d.health.Visible = true
+                end
+
+                -- Distance + ping (pinned target)
+                if Config.ESP.ShowDistance then
+                    local dist = getDistance(player)
+                    local extra = isPinned and " [LOCKED]" or ""
+                    d.dist.Text = dist.."m"..extra
+                    d.dist.Position = Vector2.new(box.topScreen.X, box.botScreen.Y+4)
+                    d.dist.Visible = true
+                end
+            else
+                hideAll(d)
+            end
+        else
+            removeESP(player)
+        end
+    end
+end
+
+-- ══════════════════════════════════
+-- AIMBOT v30
+-- FIX: ga nge-pull paksa, hanya aktif saat hold
+-- Kalau RequireHold = false → always on tapi smoothness rendah
+-- ══════════════════════════════════
+local function runAimbot()
+    if not Config.Aimbot.Enabled then return end
+
+    -- Gate: kalau RequireHold true, hanya jalan saat hold
+    if Config.Aimbot.RequireHold and not IsHolding then
+        return  -- ga ngapa-ngapain, kamera bebas sepenuhnya
+    end
+
+    refreshCache()
+
+    -- Priority: pinned target dulu
+    local targetPlayer = nil
+    local targetWorldPos = nil
+
+    if PinnedTarget and isEnemy(PinnedTarget) then
+        targetPlayer = PinnedTarget
+    elseif Config.Aimbot.AutoLock then
+        local nearest = getNearestEnemy()
+        if nearest then
+            targetPlayer = nearest.player
+        end
+    end
+
+    if not targetPlayer then
+        LockedTarget = nil
+        return
+    end
+
+    LockedTarget = targetPlayer
+
+    local targetPart = targetPlayer.Character:FindFirstChild(Config.Aimbot.TargetPart)
+    if not targetPart then return end
+
+    -- Prediction
+    local hrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local vel = hrp and hrp.Velocity or Vector3.zero
+    local basePos = targetPart.Position
+    targetWorldPos = Config.Aimbot.Prediction
+        and (basePos + vel * Config.Aimbot.PredictionFactor)
+        or  basePos
+
+    -- Smooth aim (rendah = ga nge-pull paksa)
+    local cf = Camera.CFrame
+    local lookAt = CFrame.lookAt(cf.Position, targetWorldPos)
+    Camera.CFrame = cf:Lerp(lookAt, Config.Aimbot.Smoothness)
+end
+
+-- ══════════════════════════════════
+-- TARGET LOCK UPDATE
+-- ══════════════════════════════════
+local function updatePinnedTarget()
+    if not Config.TargetLock.Enabled or Config.TargetLock.Username == "" then
+        PinnedTarget = nil
+        return
+    end
+    local found = findPlayerByPartialName(Config.TargetLock.Username)
+    PinnedTarget = (found and isEnemy(found)) and found or nil
+end
+
+-- ══════════════════════════════════
+-- SILENT AIM
+-- ══════════════════════════════════
+local function initSilentAim()
+    if not Config.Aimbot.SilentAim then return end
+    local ok, mt = pcall(getrawmetatable, game)
+    if not ok then return end
+    local old = mt.__namecall
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if (method == "FireServer" or method == "InvokeServer") then
+            local target = PinnedTarget or LockedTarget
+            if target and isEnemy(target) then
+                local head = target.Character:FindFirstChild("Head")
+                if head then
+                    local args = {...}
+                    for i, v in ipairs(args) do
+                        if typeof(v) == "Vector3" then args[i] = head.Position end
+                        if typeof(v) == "Instance" and v:IsA("BasePart") then args[i] = head end
+                    end
+                    return old(self, table.unpack(args))
+                end
+            end
+        end
+        return old(self, ...)
+    end)
+    setreadonly(mt, true)
+end
+
+initSilentAim()
+
+-- ══════════════════════════════════
+-- ADMIN PANEL UI v30
+-- ══════════════════════════════════
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "OnyxPanel_v30"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = game:GetService("CoreGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 280, 0, 580)
+MainFrame.Position = UDim2.new(0, 16, 0.05, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 16)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+_G.MainFrame = MainFrame
+
+local TitleBar = Instance.new("TextLabel")
+TitleBar.Size = UDim2.new(1, 0, 0, 42)
+TitleBar.BackgroundColor3 = Color3.fromRGB(160, 15, 15)
+TitleBar.Text = "⬡ ONYX v30 ULTRA"
+TitleBar.TextColor3 = Color3.fromRGB(255,255,255)
+TitleBar.TextSize = 15
+TitleBar.Font = Enum.Font.GothamBold
+TitleBar.Parent = MainFrame
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
+_G.TitleBar = TitleBar
+
+local yOffset = 52
+local function makeToggle(label, state, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.88, 0, 0, 36)
+    btn.Position = UDim2.new(0.06, 0, 0, yOffset)
+    btn.BackgroundColor3 = state and Color3.fromRGB(20,140,50) or Color3.fromRGB(140,20,20)
+    btn.Text = label..(state and "  ✔" or "  ✘")
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.TextSize = 12
+    btn.Font = Enum.Font.GothamSemibold
+    btn.Parent = MainFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    yOffset = yOffset + 44
+
+    local en = state
+    btn.MouseButton1Click:Connect(function()
+        en = not en
+        callback(en)
+        btn.BackgroundColor3 = en and Color3.fromRGB(20,140,50) or Color3.fromRGB(140,20,20)
+        btn.Text = label..(en and "  ✔" or "  ✘")
+    end)
+    return btn
+end
+
+local function makeSeparator(label)
+    local sep = Instance.new("TextLabel")
+    sep.Size = UDim2.new(0.88, 0, 0, 20)
+    sep.Position = UDim2.new(0.06, 0, 0, yOffset)
+    sep.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+    sep.Text = "── "..label.." ──"
+    sep.TextColor3 = Color3.fromRGB(140,140,200)
+    sep.TextSize = 11
+    sep.Font = Enum.Font.GothamBold
+    sep.Parent = MainFrame
+    Instance.new("UICorner", sep).CornerRadius = UDim.new(0, 4)
+    yOffset = yOffset + 26
+end
+
+-- ESP
+makeSeparator("ESP")
+makeToggle("ESP Box + Trace",     Config.ESP.Enabled,       function(v) Config.ESP.Enabled = v end)
+makeToggle("Show Name",           Config.ESP.ShowName,       function(v) Config.ESP.ShowName = v end)
+makeToggle("Show Health Bar",     Config.ESP.ShowHealth,     function(v) Config.ESP.ShowHealth = v end)
+makeToggle("Show Distance",       Config.ESP.ShowDistance,   function(v) Config.ESP.ShowDistance = v end)
+makeToggle("Tracer (Target Lock)",Config.ESP.ShowTracer,     function(v) Config.ESP.ShowTracer = v end)
+
+-- AIMBOT
+makeSeparator("AIMBOT")
+makeToggle("Aimbot (Hold E)",     Config.Aimbot.Enabled,    function(v) Config.Aimbot.Enabled = v end)
+makeToggle("Require Hold (E)",    Config.Aimbot.RequireHold, function(v) Config.Aimbot.RequireHold = v end)
+makeToggle("Movement Prediction", Config.Aimbot.Prediction,  function(v) Config.Aimbot.Prediction = v end)
+makeToggle("Silent Aim",          Config.Aimbot.SilentAim,   function(v) Config.Aimbot.SilentAim = v end)
+
+-- TARGET LOCK
+makeSeparator("TARGET LOCK")
+makeToggle("Target Lock ON/OFF",  Config.TargetLock.Enabled, function(v)
+    Config.TargetLock.Enabled = v
+    if not v then PinnedTarget = nil end
+end)
+
+-- Username input
+local InputBox = Instance.new("TextBox")
+InputBox.Size = UDim2.new(0.88, 0, 0, 36)
+InputBox.Position = UDim2.new(0.06, 0, 0, yOffset)
+InputBox.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+InputBox.PlaceholderText = "Ketik username target..."
+InputBox.PlaceholderColor3 = Color3.fromRGB(100,100,130)
+InputBox.Text = ""
+InputBox.TextColor3 = Color3.fromRGB(0, 220, 255)
+InputBox.TextSize = 12
+InputBox.Font = Enum.Font.Gotham
+InputBox.ClearTextOnFocus = false
+InputBox.Parent = MainFrame
+Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 6)
+yOffset = yOffset + 44
+
+-- Lock button
+local LockBtn = Instance.new("TextButton")
+LockBtn.Size = UDim2.new(0.88, 0, 0, 34)
+LockBtn.Position = UDim2.new(0.06, 0, 0, yOffset)
+LockBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
+LockBtn.Text = "🎯 LOCK TARGET"
+LockBtn.TextColor3 = Color3.fromRGB(255,255,255)
+LockBtn.TextSize = 13
+LockBtn.Font = Enum.Font.GothamBold
+LockBtn.Parent = MainFrame
+Instance.new("UICorner", LockBtn).CornerRadius = UDim.new(0, 6)
+yOffset = yOffset + 42
+
+LockBtn.MouseButton1Click:Connect(function()
+    Config.TargetLock.Username = InputBox.Text
+    Config.TargetLock.Enabled = true
+    updatePinnedTarget()
+    if PinnedTarget then
+        LockBtn.Text = "🎯 LOCKED: "..PinnedTarget.DisplayName
+        LockBtn.BackgroundColor3 = Color3.fromRGB(0, 160, 60)
+    else
+        LockBtn.Text = "❌ NOT FOUND"
+        LockBtn.BackgroundColor3 = Color3.fromRGB(160, 30, 30)
+        task.delay(1.5, function()
+            LockBtn.Text = "🎯 LOCK TARGET"
+            LockBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
+        end)
+    end
+end)
+
+-- Clear lock
+local ClearBtn = Instance.new("TextButton")
+ClearBtn.Size = UDim2.new(0.88, 0, 0, 30)
+ClearBtn.Position = UDim2.new(0.06, 0, 0, yOffset)
+ClearBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+ClearBtn.Text = "✖ Clear Lock"
+ClearBtn.TextColor3 = Color3.fromRGB(200,200,200)
+ClearBtn.TextSize = 11
+ClearBtn.Font = Enum.Font.Gotham
+ClearBtn.Parent = MainFrame
+Instance.new("UICorner", ClearBtn).CornerRadius = UDim.new(0, 6)
+yOffset = yOffset + 38
+
+ClearBtn.MouseButton1Click:Connect(function()
+    Config.TargetLock.Username = ""
+    Config.TargetLock.Enabled = false
+    PinnedTarget = nil
+    InputBox.Text = ""
+    LockBtn.Text = "🎯 LOCK TARGET"
+    LockBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
+end)
+
+-- Hide button
+local HideBtn = Instance.new("TextButton")
+HideBtn.Size = UDim2.new(0.88, 0, 0, 30)
+HideBtn.Position = UDim2.new(0.06, 0, 1, -38)
+HideBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+HideBtn.Text = "(-) Sembunyikan Panel"
+HideBtn.TextColor3 = Color3.fromRGB(160,160,220)
+HideBtn.TextSize = 11
+HideBtn.Font = Enum.Font.Gotham
+HideBtn.Parent = MainFrame
+Instance.new("UICorner", HideBtn).CornerRadius = UDim.new(0, 6)
+_G.HideBtn = HideBtn
+
+HideBtn.MouseButton1Click:Connect(function()
+    PanelOpen = not PanelOpen
+    for _, child in ipairs(MainFrame:GetChildren()) do
+        if child ~= HideBtn and child ~= TitleBar and not child:IsA("UICorner") then
+            if child:IsA("GuiObject") then child.Visible = PanelOpen end
+        end
+    end
+    MainFrame.Size = PanelOpen
+        and UDim2.new(0, 280, 0, 580)
+        or  UDim2.new(0, 280, 0, 86)
+    HideBtn.Visible = true
+end)
+
+-- ══════════════════════════════════
+-- MAIN LOOP
+-- ══════════════════════════════════
+RunService.RenderStepped:Connect(function()
+    updatePinnedTarget()
+    updateESP()
+    runAimbot()
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    removeESP(p)
+    if LockedTarget == p then LockedTarget = nil end
+    if PinnedTarget == p then
+        PinnedTarget = nil
+        LockBtn.Text = "🎯 LOCK TARGET"
+        LockBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
+    end
+end)
