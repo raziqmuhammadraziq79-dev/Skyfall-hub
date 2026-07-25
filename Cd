@@ -1,0 +1,285 @@
+-- ============================================
+-- ROBLOX ESP + AIMBOT SCRIPT
+-- Compatible: Delta Executor, Android, iOS
+-- ============================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+
+-- ============================================
+-- CONFIGURATION
+-- ============================================
+
+local Config = {
+    ESPEnabled = true,
+    AimbotEnabled = true,
+    TargetEnemyOnly = true,
+    AimPart = "Head",
+    Smoothness = 0.15,
+    MaxDistance = 500,
+    ToggleKey = Enum.KeyCode.E,
+    HideKey = Enum.KeyCode.Minus,
+    UIVisible = true
+}
+
+local ESPBoxes = {}
+local CurrentTarget = nil
+
+-- ============================================
+-- ESP SYSTEM
+-- ============================================
+
+local function CreateESPBox(Player)
+    if ESPBoxes[Player] then return end
+    
+    local Box = Instance.new("BillboardGui")
+    Box.Size = UDim2.new(4, 0, 5, 0)
+    Box.MaxDistance = Config.MaxDistance
+    Box.Adornee = Player.Character:FindFirstChild("Head")
+    Box.Parent = Player.Character:FindFirstChild("Head")
+    
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(1, 0, 1, 0)
+    Frame.BackgroundTransparency = 1
+    Frame.Parent = Box
+    
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 4)
+    Corner.Parent = Frame
+    
+    local Stroke = Instance.new("UIStroke")
+    Stroke.Color = Color3.fromRGB(0, 255, 0)
+    Stroke.Thickness = 2
+    Stroke.Parent = Frame
+    
+    local NameLabel = Instance.new("TextLabel")
+    NameLabel.Size = UDim2.new(1, 0, 0.2, 0)
+    NameLabel.BackgroundTransparency = 0.3
+    NameLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    NameLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    NameLabel.TextSize = 14
+    NameLabel.Font = Enum.Font.GothamBold
+    NameLabel.Text = Player.Name
+    NameLabel.Parent = Frame
+    
+    ESPBoxes[Player] = Box
+end
+
+local function RemoveESPBox(Player)
+    if ESPBoxes[Player] then
+        ESPBoxes[Player]:Destroy()
+        ESPBoxes[Player] = nil
+    end
+end
+
+local function UpdateESP()
+    if not Config.ESPEnabled then return end
+    
+    for _, Player in pairs(Players:GetPlayers()) do
+        if Player ~= Players.LocalPlayer and Player.Character and Player.Character:FindFirstChild("Head") then
+            if not ESPBoxes[Player] then
+                CreateESPBox(Player)
+            end
+            
+            local Box = ESPBoxes[Player]
+            if Box and Box.Parent then
+                local Distance = (Player.Character.Head.Position - Camera.Focus.Position).Magnitude
+                
+                if Distance > Config.MaxDistance then
+                    Box.MaxDistance = 0
+                else
+                    Box.MaxDistance = Config.MaxDistance
+                end
+            end
+        elseif ESPBoxes[Player] then
+            RemoveESPBox(Player)
+        end
+    end
+end
+
+-- ============================================
+-- AIMBOT SYSTEM
+-- ============================================
+
+local function GetClosestEnemy()
+    local ClosestDistance = math.huge
+    local ClosestPlayer = nil
+    
+    for _, Player in pairs(Players:GetPlayers()) do
+        if Player ~= Players.LocalPlayer and Player.Character then
+            local Head = Player.Character:FindFirstChild("Head")
+            if Head then
+                local Distance = (Head.Position - Camera.Focus.Position).Magnitude
+                
+                if Distance < ClosestDistance and Distance < Config.MaxDistance then
+                    ClosestDistance = Distance
+                    ClosestPlayer = Player
+                end
+            end
+        end
+    end
+    
+    return ClosestPlayer
+end
+
+local function AimbotTick()
+    if not Config.AimbotEnabled then
+        CurrentTarget = nil
+        return
+    end
+    
+    CurrentTarget = GetClosestEnemy()
+    
+    if CurrentTarget and CurrentTarget.Character then
+        local TargetPart = CurrentTarget.Character:FindFirstChild(Config.AimPart)
+        
+        if TargetPart then
+            local TargetPosition = TargetPart.Position
+            local CameraPosition = Camera.CFrame.Position
+            
+            local Direction = (TargetPosition - CameraPosition).Unit
+            local NewCFrame = CFrame.new(CameraPosition, CameraPosition + Direction)
+            
+            Camera.CFrame = Camera.CFrame:Lerp(NewCFrame, Config.Smoothness)
+        end
+    end
+end
+
+-- ============================================
+-- ADMIN PANEL UI
+-- ============================================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AimbotPanel"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainPanel"
+MainFrame.Size = UDim2.new(0, 300, 0, 250)
+MainFrame.Position = UDim2.new(0.02, 0, 0.05, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.BorderColor3 = Color3.fromRGB(0, 255, 0)
+MainFrame.BorderSizePixel = 2
+MainFrame.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 8)
+Corner.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(1, 0, 0.15, 0)
+Title.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Title.TextColor3 = Color3.fromRGB(0, 255, 0)
+Title.TextSize = 16
+Title.Font = Enum.Font.GothamBold
+Title.Text = "AIMBOT PANEL [YORUKA]"
+Title.Parent = MainFrame
+
+local ESPToggle = Instance.new("TextButton")
+ESPToggle.Name = "ESPToggle"
+ESPToggle.Size = UDim2.new(0.9, 0, 0.18, 0)
+ESPToggle.Position = UDim2.new(0.05, 0, 0.2, 0)
+ESPToggle.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+ESPToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+ESPToggle.TextSize = 12
+ESPToggle.Font = Enum.Font.Gotham
+ESPToggle.Text = "ESP: ON"
+ESPToggle.Parent = MainFrame
+
+ESPToggle.MouseButton1Click:Connect(function()
+    Config.ESPEnabled = not Config.ESPEnabled
+    ESPToggle.Text = "ESP: " .. (Config.ESPEnabled and "ON" or "OFF")
+    ESPToggle.BackgroundColor3 = Config.ESPEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
+end)
+
+local AimbotToggle = Instance.new("TextButton")
+AimbotToggle.Name = "AimbotToggle"
+AimbotToggle.Size = UDim2.new(0.9, 0, 0.18, 0)
+AimbotToggle.Position = UDim2.new(0.05, 0, 0.4, 0)
+AimbotToggle.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+AimbotToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+AimbotToggle.TextSize = 12
+AimbotToggle.Font = Enum.Font.Gotham
+AimbotToggle.Text = "AIMBOT: ON"
+AimbotToggle.Parent = MainFrame
+
+AimbotToggle.MouseButton1Click:Connect(function()
+    Config.AimbotEnabled = not Config.AimbotEnabled
+    AimbotToggle.Text = "AIMBOT: " .. (Config.AimbotEnabled and "ON" or "OFF")
+    AimbotToggle.BackgroundColor3 = Config.AimbotEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
+end)
+
+local HideToggle = Instance.new("TextButton")
+HideToggle.Name = "HideToggle"
+HideToggle.Size = UDim2.new(0.9, 0, 0.18, 0)
+HideToggle.Position = UDim2.new(0.05, 0, 0.6, 0)
+HideToggle.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+HideToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+HideToggle.TextSize = 12
+HideToggle.Font = Enum.Font.Gotham
+HideToggle.Text = "PANEL: VISIBLE"
+HideToggle.Parent = MainFrame
+
+HideToggle.MouseButton1Click:Connect(function()
+    Config.UIVisible = not Config.UIVisible
+    MainFrame.Visible = Config.UIVisible
+    HideToggle.Text = "PANEL: " .. (Config.UIVisible and "VISIBLE" or "HIDDEN")
+end)
+
+local InfoLabel = Instance.new("TextLabel")
+InfoLabel.Name = "Info"
+InfoLabel.Size = UDim2.new(0.9, 0, 0.15, 0)
+InfoLabel.Position = UDim2.new(0.05, 0, 0.8, 0)
+InfoLabel.BackgroundTransparency = 1
+InfoLabel.TextColor3 = Color3.fromRGB(0, 200, 0)
+InfoLabel.TextSize = 10
+InfoLabel.Font = Enum.Font.Gotham
+InfoLabel.Text = "[-] Hide | [E] Toggle"
+InfoLabel.Parent = MainFrame
+
+-- ============================================
+-- INPUT HANDLING
+-- ============================================
+
+UserInputService.InputBegan:Connect(function(Input, GameProcessed)
+    if GameProcessed then return end
+    
+    if Input.KeyCode == Config.ToggleKey then
+        Config.AimbotEnabled = not Config.AimbotEnabled
+        AimbotToggle.Text = "AIMBOT: " .. (Config.AimbotEnabled and "ON" or "OFF")
+        AimbotToggle.BackgroundColor3 = Config.AimbotEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
+    end
+    
+    if Input.KeyCode == Config.HideKey then
+        Config.UIVisible = not Config.UIVisible
+        MainFrame.Visible = Config.UIVisible
+    end
+end)
+
+-- ============================================
+-- MAIN LOOP
+-- ============================================
+
+RunService.RenderStepped:Connect(function()
+    UpdateESP()
+    AimbotTick()
+end)
+
+Players.PlayerAdded:Connect(function(Player)
+    Player.CharacterAdded:Connect(function(Character)
+        if Config.ESPEnabled then
+            wait(0.1)
+            CreateESPBox(Player)
+        end
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(Player)
+    RemoveESPBox(Player)
+end)
+
+print("[YORUKA] Aimbot Script Loaded | Delta Executor Ready")
