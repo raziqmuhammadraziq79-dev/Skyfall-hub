@@ -1,0 +1,201 @@
+-- Roblox ESP + Aimbot Script | Delta Executor Compatible
+-- Android/iOS | Toggle: Insert key | Hide: Minus key
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+
+local Config = {
+    ESPEnabled = true,
+    AimbotEnabled = true,
+    AdminPanelEnabled = true,
+    TargetPart = "Head",
+    FOVRadius = 500,
+    SmoothAim = 0.1,
+    ESPVisible = true
+}
+
+local ESP = {}
+local AimbotTarget = nil
+
+-- ESP System
+function ESP:CreateBox(player)
+    if not player.Character then return end
+    local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+    
+    local boxLabel = Instance.new("BillboardGui")
+    boxLabel.Size = UDim2.new(4, 0, 5, 0)
+    boxLabel.MaxDistance = 1000
+    boxLabel.Adornee = humanoidRootPart
+    
+    local textBox = Instance.new("TextLabel")
+    textBox.Size = UDim2.new(1, 0, 1, 0)
+    textBox.BackgroundTransparency = 0.3
+    textBox.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textBox.TextSize = 14
+    textBox.Text = player.Name .. " [" .. (player.Character:FindFirstChild("Humanoid").Health or 0) .. "HP]"
+    textBox.Parent = boxLabel
+    
+    boxLabel.Parent = player.Character:FindFirstChild("Head") or humanoidRootPart
+    player:SetAttribute("ESPBox", boxLabel)
+end
+
+function ESP:RemoveBox(player)
+    local box = player:GetAttribute("ESPBox")
+    if box then box:Destroy() end
+end
+
+-- Aimbot System
+function AimbotTarget:Acquire()
+    local localPlayer = Players.LocalPlayer
+    local mousePos = UserInputService:GetMouseLocation()
+    local closestDistance = Config.FOVRadius
+    local target = nil
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= localPlayer and player.Character then
+            local targetPart = player.Character:FindFirstChild(Config.TargetPart)
+            if targetPart then
+                local screenPos = Camera:WorldToScreenPoint(targetPart.Position)
+                local distance = math.sqrt((screenPos.X - mousePos.X)^2 + (screenPos.Y - mousePos.Y)^2)
+                
+                if distance < closestDistance then
+                    closestDistance = distance
+                    target = player
+                end
+            end
+        end
+    end
+    
+    return target
+end
+
+function AimbotTarget:Lock(target)
+    if not target or not target.Character then return end
+    local targetPart = target.Character:FindFirstChild(Config.TargetPart)
+    if targetPart then
+        local direction = (targetPart.Position - Camera.CFrame.Position).Unit
+        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + direction), Config.SmoothAim)
+    end
+end
+
+-- Admin Panel
+local AdminPanel = {}
+
+function AdminPanel:Create()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AdminPanel"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+    
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 250, 0, 300)
+    mainFrame.Position = UDim2.new(0, 10, 0, 10)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = screenGui
+    
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, 0, 0, 30)
+    titleLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLabel.Text = "[ ADMIN PANEL ]"
+    titleLabel.TextSize = 16
+    titleLabel.Parent = mainFrame
+    
+    -- ESP Toggle
+    local espButton = Instance.new("TextButton")
+    espButton.Size = UDim2.new(1, 0, 0, 40)
+    espButton.Position = UDim2.new(0, 0, 0, 40)
+    espButton.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+    espButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    espButton.Text = "ESP: ON"
+    espButton.Parent = mainFrame
+    espButton.MouseButton1Click:Connect(function()
+        Config.ESPEnabled = not Config.ESPEnabled
+        espButton.Text = "ESP: " .. (Config.ESPEnabled and "ON" or "OFF")
+        espButton.BackgroundColor3 = Config.ESPEnabled and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0)
+    end)
+    
+    -- Aimbot Toggle
+    local aimbotButton = Instance.new("TextButton")
+    aimbotButton.Size = UDim2.new(1, 0, 0, 40)
+    aimbotButton.Position = UDim2.new(0, 0, 0, 90)
+    aimbotButton.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+    aimbotButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    aimbotButton.Text = "AIMBOT: ON"
+    aimbotButton.Parent = mainFrame
+    aimbotButton.MouseButton1Click:Connect(function()
+        Config.AimbotEnabled = not Config.AimbotEnabled
+        aimbotButton.Text = "AIMBOT: " .. (Config.AimbotEnabled and "ON" or "OFF")
+        aimbotButton.BackgroundColor3 = Config.AimbotEnabled and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0)
+    end)
+    
+    -- Visibility Toggle
+    local visButton = Instance.new("TextButton")
+    visButton.Size = UDim2.new(1, 0, 0, 40)
+    visButton.Position = UDim2.new(0, 0, 0, 140)
+    visButton.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+    visButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    visButton.Text = "VISIBLE: ON"
+    visButton.Parent = mainFrame
+    visButton.MouseButton1Click:Connect(function()
+        Config.ESPVisible = not Config.ESPVisible
+        visButton.Text = "VISIBLE: " .. (Config.ESPVisible and "ON" or "OFF")
+        visButton.BackgroundColor3 = Config.ESPVisible and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0)
+    end)
+end
+
+-- Input Binds
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Insert then
+        Config.ESPEnabled = not Config.ESPEnabled
+        Config.AimbotEnabled = not Config.AimbotEnabled
+    elseif input.KeyCode == Enum.KeyCode.Minus then
+        Config.ESPVisible = not Config.ESPVisible
+    end
+end)
+
+-- Main Loop
+RunService.RenderStepped:Connect(function()
+    if Config.ESPEnabled and Config.ESPVisible then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= Players.LocalPlayer and player.Character then
+                if not player:GetAttribute("ESPBox") then
+                    ESP:CreateBox(player)
+                end
+            end
+        end
+    elseif not Config.ESPVisible then
+        for _, player in pairs(Players:GetPlayers()) do
+            ESP:RemoveBox(player)
+        end
+    end
+    
+    if Config.AimbotEnabled then
+        AimbotTarget = AimbotTarget:Acquire()
+        if AimbotTarget then
+            AimbotTarget:Lock(AimbotTarget)
+        end
+    end
+end)
+
+-- Player Added/Removed
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        if Config.ESPEnabled then ESP:CreateBox(player) end
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    ESP:RemoveBox(player)
+end)
+
+-- Init
+AdminPanel:Create()
+print("Script loaded. Insert=Toggle | Minus=Hide ESP")
