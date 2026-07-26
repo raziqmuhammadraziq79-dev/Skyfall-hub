@@ -1,0 +1,589 @@
+-- ONYX | Strike Warfare Cheat v1.0
+-- Auto Kill + Aimbot + Silent Aim + ESP + Find Enemy
+-- Delta Executor Compatible (Android/iOS)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+-- ══════════════════════════════════
+-- CONFIG
+-- ══════════════════════════════════
+local Config = {
+    AutoKill = {
+        Enabled = true,
+        Method = "Humanoid",   -- "Humanoid" atau "RemoteEvent"
+        Delay = 0.08,          -- delay antar kill (biar ga instant suspicious)
+        OnlyVisible = false,   -- hanya kill yang on screen
+    },
+    Aimbot = {
+        Enabled = true,
+        TargetPart = "Head",
+        Smoothness = 0.20,
+        FOV = 9999,
+        Prediction = true,
+        PredictionFactor = 0.10,
+        RequireHold = true,
+        HoldKey = Enum.KeyCode.E,
+        AutoLock = true,
+    },
+    SilentAim = {
+        Enabled = true,
+    },
+    ESP = {
+        Enabled = true,
+        BoxColor = Color3.fromRGB(255, 40, 40),
+        TraceColor = Color3.fromRGB(255, 210, 0),
+        NameColor = Color3.fromRGB(255, 255, 255),
+        ShowName = true,
+        ShowHealth = true,
+        ShowDistance = true,
+        BoxThickness = 1.5,
+        TraceThickness = 1,
+    },
+    NoRecoil = {
+        Enabled = true,
+    },
+    InfiniteAmmo = {
+        Enabled = true,
+    },
+    SpeedHack = {
+        Enabled = false,
+        Speed = 24,  -- default walk speed roblox = 16
+    },
+}
+
+-- ══════════════════════════════════
+-- STATE
+-- ══════════════════════════════════
+local ESPObjects     = {}
+local LockedTarget   = nil
+local TargetCache    = {}
+local LastCache      = 0
+local CacheInterval  = 0.05
+local IsHolding      = false
+local LastKillTime   = 0
+
+-- ══════════════════════════════════
+-- UTILS
+-- ══════════════════════════════════
+local function isEnemy(player)
+    if player == LocalPlayer then return false end
+    local char = player.Character
+    if not char then return false end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    if not char:FindFirstChild("HumanoidRootPart") then return false end
+    return true
+end
+
+local function getScreenPos(worldPos)
+    local sp, onScreen = Camera:WorldToViewportPoint(worldPos)
+    return Vector2.new(sp.X, sp.Y), onScreen, sp.Z
+end
+
+local function getDistance(player)
+    local c  = player.Character
+    local lc = LocalPlayer.Character
+    if not c or not lc then return 0 end
+    local a = c:FindFirstChild("HumanoidRootPart")
+    local b = lc:FindFirstChild("HumanoidRootPart")
+    if not a or not b then return 0 end
+    return math.floor((a.Position - b.Position).Magnitude)
+end
+
+local function getCharBox(char)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local topS, onScreen = getScreenPos(hrp.Position + Vector3.new(0, 3.5, 0))
+    local botS           = getScreenPos(hrp.Position + Vector3.new(0,-3.2, 0))
+    if not onScreen then return nil end
+    local h = math.abs(topS.Y - botS.Y)
+    return { topScreen=topS, botScreen=botS, height=h, width=h*0.55 }
+end
+
+-- ══════════════════════════════════
+-- FIND GAME REMOTE / KILL BRIDGE
+-- Strike Warfare biasanya pake RemoteEvent
+-- buat damage, kita scan otomatis
+-- ══════════════════════════════════
+local KillRemote   = nil
+local DamageRemote = nil
+
+local function scanRemotes()
+    -- scan seluruh ReplicatedStorage + workspace buat remote damage/kill
+    local RS = game:GetService("ReplicatedStorage")
+    local keywords = {"damage","kill","hit","shoot","bullet","fire","projectile"}
+    local function scanFolder(folder)
+        for _, obj in ipairs(folder:GetDescendants()) do
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                local name = obj.Name:lower()
+                for _, kw in ipairs(keywords) do
+                    if name:find(kw) then
+                        if name:find("kill") then
+                            KillRemote = obj
+                        else
+                            DamageRemote = obj
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end
+    pcall(scanRemotes, RS)
+    pcall(scanRemotes, workspace)
+end
+
+task.spawn(scanRemotes)
+
+-- ══════════════════════════════════
+-- AUTO KILL
+-- Method 1: langsung set Humanoid.Health = 0
+-- Method 2: fire damage remote
+-- ══════════════════════════════════
+local function tryKill(player)
+    if not isEnemy(player) then return end
+    local char = player.Character
+    local hum  = char and char:FindFirstChild("Humanoid")
+    if not hum then return end
+
+    local now = tick()
+    if now - LastKillTime < Config.AutoKill.Delay then return end
+    LastKillTime = now
+
+    -- Method 1: direct (works on unprotected games)
+    if Config.AutoKill.Method == "Humanoid" then
+        pcall(function()
+            hum.Health = 0
+        end)
+    end
+
+    -- Method 2: remote event (lebih kompatibel)
+    if DamageRemote then
+        pcall(function()
+            local head = char:FindFirstChild("Head")
+            DamageRemote:FireServer(head or char.HumanoidRootPart, 99999)
+        end)
+    end
+
+    if KillRemote then
+        pcall(function()
+            KillRemote:FireServer(player, char)
+        end)
+    end
+end
+
+-- ══════════════════════════════════
+-- ENEMY CACHE (50ms)
+-- ══════════════════════════════════
+local function refreshCache()
+    local now = tick()
+    if now - LastCache < CacheInterval then return end
+    LastCache = now
+    TargetCache = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if isEnemy(p) then
+            local head = p.Character:FindFirstChild("Head")
+            if head then
+                local sp, onScreen, depth = getScreenPos(head.Position)
+                if onScreen and depth > 0 then
+                    local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                    table.insert(TargetCache, {
+                        player    = p,
+                        screenPos = sp,
+                        depth     = depth,
+                        worldPos  = head.Position,
+                        velocity  = hrp and hrp.Velocity or Vector3.zero,
+                    })
+                end
+            end
+        end
+    end
+    -- sort by screen distance dari center
+    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    table.sort(TargetCache, function(a, b)
+        return (a.screenPos-center).Magnitude < (b.screenPos-center).Magnitude
+    end)
+end
+
+local function getNearestData()
+    return TargetCache[1]
+end
+
+-- ══════════════════════════════════
+-- AIMBOT
+-- ══════════════════════════════════
+local function runAimbot()
+    if not Config.Aimbot.Enabled then return end
+    if Config.Aimbot.RequireHold and not IsHolding then return end
+
+    refreshCache()
+
+    local data = nil
+    if Config.Aimbot.AutoLock then
+        data = getNearestData()
+    end
+
+    if not data then LockedTarget = nil return end
+    LockedTarget = data.player
+
+    local targetPart = LockedTarget.Character:FindFirstChild(Config.Aimbot.TargetPart)
+    if not targetPart then return end
+
+    local vel      = data.velocity
+    local basePos  = targetPart.Position
+    local finalPos = Config.Aimbot.Prediction
+        and (basePos + vel * Config.Aimbot.PredictionFactor)
+        or  basePos
+
+    local cf = Camera.CFrame
+    Camera.CFrame = cf:Lerp(CFrame.lookAt(cf.Position, finalPos), Config.Aimbot.Smoothness)
+end
+
+-- ══════════════════════════════════
+-- SILENT AIM
+-- hook __namecall, redirect bullet ke head
+-- ══════════════════════════════════
+local function initSilentAim()
+    if not Config.SilentAim.Enabled then return end
+    local ok, mt = pcall(getrawmetatable, game)
+    if not ok then return end
+    local old = mt.__namecall
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if method == "FireServer" or method == "InvokeServer" then
+            if LockedTarget and isEnemy(LockedTarget) then
+                local head = LockedTarget.Character:FindFirstChild("Head")
+                if head then
+                    local args = {...}
+                    for i, v in ipairs(args) do
+                        if typeof(v) == "Vector3" then args[i] = head.Position end
+                        if typeof(v) == "Instance" and v:IsA("BasePart") then args[i] = head end
+                    end
+                    return old(self, table.unpack(args))
+                end
+            end
+        end
+        return old(self, ...)
+    end)
+    setreadonly(mt, true)
+end
+
+initSilentAim()
+
+-- ══════════════════════════════════
+-- NO RECOIL
+-- zero recoil via CFrame correction tiap frame
+-- ══════════════════════════════════
+local LastCF = Camera.CFrame
+RunService.RenderStepped:Connect(function()
+    if Config.NoRecoil.Enabled then
+        local cur = Camera.CFrame
+        -- kalau ada vertical kick paksa → counter balik
+        local pitchDelta = math.asin(cur.LookVector.Y) - math.asin(LastCF.LookVector.Y)
+        if pitchDelta > 0.002 then -- threshold recoil kick
+            Camera.CFrame = CFrame.new(cur.Position)
+                * CFrame.fromEulerAnglesYXZ(
+                    math.asin(LastCF.LookVector.Y),
+                    math.atan2(-cur.LookVector.X, -cur.LookVector.Z),
+                    0
+                )
+        end
+    end
+    LastCF = Camera.CFrame
+end)
+
+-- ══════════════════════════════════
+-- INFINITE AMMO
+-- hook reload function / ammo property
+-- ══════════════════════════════════
+local function initInfiniteAmmo()
+    if not Config.InfiniteAmmo.Enabled then return end
+    -- scan backpack + character buat tools/guns
+    local function patchTool(tool)
+        -- cari attribute ammo
+        for _, v in ipairs(tool:GetDescendants()) do
+            if v:IsA("IntValue") or v:IsA("NumberValue") then
+                local n = v.Name:lower()
+                if n:find("ammo") or n:find("bullet") or n:find("mag") then
+                    v.Value = 999
+                    v.Changed:Connect(function()
+                        if v.Value < 30 then v.Value = 999 end
+                    end)
+                end
+            end
+            -- RemoteFunction reload → bypass
+            if v:IsA("RemoteFunction") and v.Name:lower():find("reload") then
+                pcall(function()
+                    v.OnClientInvoke = function() return true end
+                end)
+            end
+        end
+    end
+
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    char.ChildAdded:Connect(function(c)
+        if c:IsA("Tool") then task.wait(0.1) patchTool(c) end
+    end)
+    LocalPlayer.Backpack.ChildAdded:Connect(function(c)
+        if c:IsA("Tool") then task.wait(0.1) patchTool(c) end
+    end)
+    for _, t in ipairs(LocalPlayer.Backpack:GetChildren()) do
+        if t:IsA("Tool") then patchTool(t) end
+    end
+end
+
+task.spawn(initInfiniteAmmo)
+
+-- ══════════════════════════════════
+-- SPEED HACK
+-- ══════════════════════════════════
+local function applySpeed()
+    if not Config.SpeedHack.Enabled then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    if hum then hum.WalkSpeed = Config.SpeedHack.Speed end
+end
+
+-- ══════════════════════════════════
+-- AUTO KILL LOOP (nearest enemy)
+-- ══════════════════════════════════
+task.spawn(function()
+    while task.wait(Config.AutoKill.Delay) do
+        if Config.AutoKill.Enabled then
+            refreshCache()
+            local nearest = getNearestData()
+            if nearest then
+                tryKill(nearest.player)
+            end
+        end
+    end
+end)
+
+-- ══════════════════════════════════
+-- ESP DRAWING
+-- ══════════════════════════════════
+local function newLine(col, thick)
+    local l = Drawing.new("Line")
+    l.Color = col l.Thickness = thick l.Visible = false return l
+end
+local function newText(sz, col)
+    local t = Drawing.new("Text")
+    t.Size = sz t.Color = col t.Outline = true t.Center = true t.Visible = false return t
+end
+
+local function createESP(p)
+    ESPObjects[p] = {
+        box    = {newLine(Config.ESP.BoxColor,1.5), newLine(Config.ESP.BoxColor,1.5),
+                  newLine(Config.ESP.BoxColor,1.5), newLine(Config.ESP.BoxColor,1.5)},
+        trace  = newLine(Config.ESP.TraceColor, 1),
+        name   = newText(13, Config.ESP.NameColor),
+        health = newLine(Color3.fromRGB(0,255,0), 3),
+        dist   = newText(11, Color3.fromRGB(180,180,255)),
+    }
+end
+
+local function removeESP(p)
+    if not ESPObjects[p] then return end
+    local d = ESPObjects[p]
+    for _, l in ipairs(d.box) do l:Remove() end
+    d.trace:Remove() d.name:Remove() d.health:Remove() d.dist:Remove()
+    ESPObjects[p] = nil
+end
+
+local function updateESP()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if isEnemy(p) then
+            if not ESPObjects[p] then createESP(p) end
+            local d   = ESPObjects[p]
+            local box = p.Character and getCharBox(p.Character)
+            local hum = p.Character and p.Character:FindFirstChild("Humanoid")
+            local hp  = hum and (hum.Health/math.max(hum.MaxHealth,1)) or 0
+            local sb  = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+
+            if box and Config.ESP.Enabled then
+                local x,y,w,h = box.topScreen.X-box.width/2, box.topScreen.Y, box.width, box.height
+                d.box[1].From=Vector2.new(x,y)     d.box[1].To=Vector2.new(x+w,y)   d.box[1].Visible=true
+                d.box[2].From=Vector2.new(x,y+h)   d.box[2].To=Vector2.new(x+w,y+h) d.box[2].Visible=true
+                d.box[3].From=Vector2.new(x,y)     d.box[3].To=Vector2.new(x,y+h)   d.box[3].Visible=true
+                d.box[4].From=Vector2.new(x+w,y)   d.box[4].To=Vector2.new(x+w,y+h) d.box[4].Visible=true
+                d.trace.From=sb d.trace.To=box.botScreen d.trace.Visible=true
+                if Config.ESP.ShowName then
+                    d.name.Text=p.DisplayName
+                    d.name.Position=Vector2.new(box.topScreen.X,y-16)
+                    d.name.Visible=true
+                end
+                if Config.ESP.ShowHealth then
+                    local bh=h*hp
+                    d.health.From=Vector2.new(x-5,y+h) d.health.To=Vector2.new(x-5,y+h-bh)
+                    d.health.Color=Color3.fromRGB(math.floor(255*(1-hp)),math.floor(255*hp),0)
+                    d.health.Visible=true
+                end
+                if Config.ESP.ShowDistance then
+                    d.dist.Text=getDistance(p).."m"
+                    d.dist.Position=Vector2.new(box.topScreen.X,box.botScreen.Y+4)
+                    d.dist.Visible=true
+                end
+            else
+                for _, l in ipairs(d.box) do l.Visible=false end
+                d.trace.Visible=false d.name.Visible=false
+                d.health.Visible=false d.dist.Visible=false
+            end
+        else
+            removeESP(p)
+        end
+    end
+end
+
+-- ══════════════════════════════════
+-- HOLD KEY
+-- ══════════════════════════════════
+UserInputService.InputBegan:Connect(function(i, gpe)
+    if gpe then return end
+    if i.KeyCode == Config.Aimbot.HoldKey then IsHolding = true end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.KeyCode == Config.Aimbot.HoldKey then IsHolding = false end
+end)
+
+-- ══════════════════════════════════
+-- ADMIN PANEL UI
+-- ══════════════════════════════════
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "OnyxSW_v1"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = game:GetService("CoreGui")
+
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 270, 0, 520)
+Main.Position = UDim2.new(0, 16, 0.05, 0)
+Main.BackgroundColor3 = Color3.fromRGB(10, 10, 16)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Draggable = true
+Main.Parent = ScreenGui
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0,10)
+
+local TBar = Instance.new("TextLabel")
+TBar.Size = UDim2.new(1,0,0,42)
+TBar.BackgroundColor3 = Color3.fromRGB(160,15,15)
+TBar.Text = "⬡ ONYX | Strike Warfare v1"
+TBar.TextColor3 = Color3.fromRGB(255,255,255)
+TBar.TextSize = 14
+TBar.Font = Enum.Font.GothamBold
+TBar.Parent = Main
+Instance.new("UICorner", TBar).CornerRadius = UDim.new(0,10)
+
+local yOff = 50
+local PanelOpen = true
+
+local function makeSep(label)
+    local s = Instance.new("TextLabel")
+    s.Size = UDim2.new(0.88,0,0,18)
+    s.Position = UDim2.new(0.06,0,0,yOff)
+    s.BackgroundColor3 = Color3.fromRGB(28,28,48)
+    s.Text = "── "..label.." ──"
+    s.TextColor3 = Color3.fromRGB(130,130,200)
+    s.TextSize = 10
+    s.Font = Enum.Font.GothamBold
+    s.Parent = Main
+    Instance.new("UICorner", s).CornerRadius = UDim.new(0,4)
+    yOff = yOff + 24
+end
+
+local function makeBtn(label, state, cb)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0.88,0,0,36)
+    b.Position = UDim2.new(0.06,0,0,yOff)
+    b.BackgroundColor3 = state and Color3.fromRGB(20,135,50) or Color3.fromRGB(135,20,20)
+    b.Text = label..(state and "  ✔" or "  ✘")
+    b.TextColor3 = Color3.fromRGB(255,255,255)
+    b.TextSize = 12
+    b.Font = Enum.Font.GothamSemibold
+    b.Parent = Main
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    yOff = yOff + 42
+    local en = state
+    b.MouseButton1Click:Connect(function()
+        en = not en cb(en)
+        b.BackgroundColor3 = en and Color3.fromRGB(20,135,50) or Color3.fromRGB(135,20,20)
+        b.Text = label..(en and "  ✔" or "  ✘")
+    end)
+    return b
+end
+
+makeSep("COMBAT")
+makeBtn("Auto Kill Nearest",   Config.AutoKill.Enabled,    function(v) Config.AutoKill.Enabled = v end)
+makeBtn("Aimbot (Hold E)",     Config.Aimbot.Enabled,      function(v) Config.Aimbot.Enabled = v end)
+makeBtn("Require Hold (E)",    Config.Aimbot.RequireHold,  function(v) Config.Aimbot.RequireHold = v end)
+makeBtn("Silent Aim",          Config.SilentAim.Enabled,   function(v) Config.SilentAim.Enabled = v end)
+makeBtn("No Recoil",           Config.NoRecoil.Enabled,    function(v) Config.NoRecoil.Enabled = v end)
+makeBtn("Infinite Ammo",       Config.InfiniteAmmo.Enabled,function(v) Config.InfiniteAmmo.Enabled = v end)
+
+makeSep("MOVEMENT")
+makeBtn("Speed Hack",          Config.SpeedHack.Enabled,   function(v)
+    Config.SpeedHack.Enabled = v
+    if not v then
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChild("Humanoid")
+        if hum then hum.WalkSpeed = 16 end
+    end
+end)
+
+makeSep("ESP")
+makeBtn("ESP Box + Trace",     Config.ESP.Enabled,         function(v) Config.ESP.Enabled = v end)
+makeBtn("Show Name",           Config.ESP.ShowName,         function(v) Config.ESP.ShowName = v end)
+makeBtn("Show Health",         Config.ESP.ShowHealth,       function(v) Config.ESP.ShowHealth = v end)
+makeBtn("Show Distance",       Config.ESP.ShowDistance,     function(v) Config.ESP.ShowDistance = v end)
+
+-- Hide panel
+local HideB = Instance.new("TextButton")
+HideB.Size = UDim2.new(0.88,0,0,30)
+HideB.Position = UDim2.new(0.06,0,1,-36)
+HideB.BackgroundColor3 = Color3.fromRGB(35,35,55)
+HideB.Text = "(-) Sembunyikan Panel"
+HideB.TextColor3 = Color3.fromRGB(160,160,220)
+HideB.TextSize = 11
+HideB.Font = Enum.Font.Gotham
+HideB.Parent = Main
+Instance.new("UICorner", HideB).CornerRadius = UDim.new(0,6)
+
+HideB.MouseButton1Click:Connect(function()
+    PanelOpen = not PanelOpen
+    for _, c in ipairs(Main:GetChildren()) do
+        if c ~= HideB and c ~= TBar and not c:IsA("UICorner") then
+            if c:IsA("GuiObject") then c.Visible = PanelOpen end
+        end
+    end
+    Main.Size = PanelOpen and UDim2.new(0,270,0,520) or UDim2.new(0,270,0,84)
+    HideB.Visible = true
+end)
+
+UserInputService.InputBegan:Connect(function(i, gpe)
+    if gpe then return end
+    if i.KeyCode == Enum.KeyCode.Minus then HideB.MouseButton1Click:Fire() end
+end)
+
+-- ══════════════════════════════════
+-- MAIN LOOP
+-- ══════════════════════════════════
+RunService.RenderStepped:Connect(function()
+    updateESP()
+    runAimbot()
+    applySpeed()
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    removeESP(p)
+    if LockedTarget == p then LockedTarget = nil end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.spawn(initInfiniteAmmo)
+end)
