@@ -1,0 +1,459 @@
+-- // ONYX V10 — Strike Warfare All In One
+-- // Delta Executor Compatible | Android + iOS + PC
+-- // Features: Silent Aimbot, ESP, Auto-Lock, Head Lock, Inf Ammo, Teleport, Hide Panel
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+-- // STATE
+local State = {
+    AimbotEnabled = false,
+    ESPEnabled = false,
+    InfAmmo = false,
+    SilentAim = false,
+    AutoHead = true,
+    TargetUsername = "",
+    LockedTarget = nil,
+    PanelVisible = true,
+    FOV = 300,
+    Smoothness = 0.12,
+}
+
+-- // UTILITY
+local function GetCharacter(player)
+    return player and player.Character
+end
+
+local function GetRootPart(player)
+    local char = GetCharacter(player)
+    return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso"))
+end
+
+local function GetHead(player)
+    local char = GetCharacter(player)
+    return char and char:FindFirstChild("Head")
+end
+
+local function GetHumanoid(player)
+    local char = GetCharacter(player)
+    return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function IsAlive(player)
+    local hum = GetHumanoid(player)
+    return hum and hum.Health > 0
+end
+
+local function ScreenDistance(worldPos)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
+    if onScreen then
+        local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        return (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude, screenPos
+    end
+    return math.huge, nil
+end
+
+-- // TARGET RESOLVER
+local function ResolveTarget()
+    local uname = State.TargetUsername:lower():gsub("%s+", "")
+    local best = nil
+    local bestDist = math.huge
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer then continue end
+        if not IsAlive(p) then continue end
+
+        local pname = p.Name:lower()
+        local pdisp = p.DisplayName:lower()
+
+        local nameMatch = (uname ~= "" and (pname:find(uname, 1, true) or pdisp:find(uname, 1, true)))
+
+        local part = State.AutoHead and GetHead(p) or GetRootPart(p)
+        if not part then continue end
+
+        local dist, screenPos = ScreenDistance(part.Position)
+
+        if uname ~= "" then
+            if nameMatch then
+                if dist < bestDist then
+                    bestDist = dist
+                    best = p
+                end
+            end
+        else
+            if dist < State.FOV and dist < bestDist then
+                bestDist = dist
+                best = p
+            end
+        end
+    end
+
+    return best
+end
+
+-- // SILENT AIMBOT CORE
+local OldNamecall
+OldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+
+    if State.AimbotEnabled and State.SilentAim and method == "FindPartOnRayWithIgnoreList" then
+        local target = State.LockedTarget
+        if target and IsAlive(target) then
+            local part = State.AutoHead and GetHead(target) or GetRootPart(target)
+            if part then
+                local fakeRay = Ray.new(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position).Unit * 1000)
+                args[1] = fakeRay
+                return OldNamecall(self, table.unpack(args))
+            end
+        end
+    end
+
+    return OldNamecall(self, table.unpack(args))
+end)
+
+-- // CAMERA LOCK (Hard Snap)
+RunService.RenderStepped:Connect(function()
+    State.LockedTarget = ResolveTarget()
+
+    if State.AimbotEnabled and State.LockedTarget then
+        local target = State.LockedTarget
+        local part = State.AutoHead and GetHead(target) or GetRootPart(target)
+        if part then
+            local targetPos = part.Position
+            local currentCF = Camera.CFrame
+            local direction = (targetPos - currentCF.Position).Unit
+            local targetCF = CFrame.lookAt(currentCF.Position, currentCF.Position + direction)
+            Camera.CFrame = currentCF:Lerp(targetCF, State.Smoothness)
+        end
+    end
+end)
+
+-- // ESP
+local ESPFolder = Instance.new("Folder", Workspace)
+ESPFolder.Name = "OnyxESP"
+
+local function ClearESP()
+    for _, v in ipairs(ESPFolder:GetChildren()) do
+        v:Destroy()
+    end
+end
+
+local function DrawESP(player)
+    if player == LocalPlayer then return end
+    local char = GetCharacter(player)
+    if not char then return end
+
+    local box = Instance.new("SelectionBox")
+    box.Color3 = Color3.fromRGB(255, 0, 0)
+    box.LineThickness = 0.05
+    box.SurfaceTransparency = 0.7
+    box.SurfaceColor3 = Color3.fromRGB(255, 0, 0)
+    box.Adornee = char
+    box.Parent = ESPFolder
+    box.Name = player.Name .. "_ESP"
+end
+
+RunService.Heartbeat:Connect(function()
+    if not State.ESPEnabled then
+        ClearESP()
+        return
+    end
+    ClearESP()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if IsAlive(p) then
+            DrawESP(p)
+        end
+    end
+end)
+
+-- // INFINITE AMMO
+local function PatchAmmo()
+    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    for _, v in ipairs(tool:GetDescendants()) do
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            local n = v.Name:lower()
+            if n:find("ammo") or n:find("bullet") or n:find("mag") or n:find("clip") then
+                v.Value = 9999
+                v.Changed:Connect(function()
+                    if State.InfAmmo then
+                        v.Value = 9999
+                    end
+                end)
+            end
+        end
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") and State.InfAmmo then
+            task.wait(0.3)
+            PatchAmmo()
+        end
+    end)
+end)
+
+-- // TELEPORT TO PLAYER
+local function TeleportToUsername(name)
+    local n = name:lower()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer then continue end
+        if p.Name:lower():find(n, 1, true) or p.DisplayName:lower():find(n, 1, true) then
+            local root = GetRootPart(LocalPlayer)
+            local targetRoot = GetRootPart(p)
+            if root and targetRoot then
+                root.CFrame = targetRoot.CFrame + Vector3.new(2, 0, 0)
+                return true, p.Name
+            end
+        end
+    end
+    return false, nil
+end
+
+-- // GUI — MOBILE/PC UNIVERSAL, HIDEABLE
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "OnyxV10"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = gethui and gethui() or LocalPlayer.PlayerGui
+
+-- Toggle Button (always visible)
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 50, 0, 26)
+ToggleBtn.Position = UDim2.new(0, 8, 0.5, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+ToggleBtn.Text = "NYX"
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 12
+ToggleBtn.BorderSizePixel = 0
+ToggleBtn.Parent = ScreenGui
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
+
+-- Main Panel
+local Panel = Instance.new("Frame")
+Panel.Size = UDim2.new(0, 270, 0, 460)
+Panel.Position = UDim2.new(0, 66, 0.5, -230)
+Panel.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
+Panel.BorderSizePixel = 0
+Panel.Parent = ScreenGui
+Instance.new("UICorner", Panel).CornerRadius = UDim.new(0, 10)
+
+local function MakeDraggable(frame)
+    local drag, dragInput, dragStart, startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            drag = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then drag = false end
+            end)
+        end
+    end)
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and drag then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+MakeDraggable(Panel)
+
+-- Title
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 34)
+Title.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+Title.Text = "ONYX V10 — Strike Warfare"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 13
+Title.BorderSizePixel = 0
+Title.Parent = Panel
+Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
+
+-- Layout
+local Layout = Instance.new("UIListLayout")
+Layout.SortOrder = Enum.SortOrder.LayoutOrder
+Layout.Padding = UDim.new(0, 5)
+Layout.Parent = Panel
+
+local Pad = Instance.new("UIPadding")
+Pad.PaddingTop = UDim.new(0, 40)
+Pad.PaddingLeft = UDim.new(0, 10)
+Pad.PaddingRight = UDim.new(0, 10)
+Pad.Parent = Panel
+
+-- // TOGGLE FACTORY
+local function MakeToggle(labelText, stateKey, callback)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 32)
+    row.BackgroundColor3 = Color3.fromRGB(22, 22, 26)
+    row.BorderSizePixel = 0
+    row.Parent = Panel
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.65, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = labelText
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+    Instance.new("UIPadding", lbl).PaddingLeft = UDim.new(0, 8)
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 44, 0, 22)
+    btn.Position = UDim2.new(1, -52, 0.5, -11)
+    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+    btn.Text = "OFF"
+    btn.TextColor3 = Color3.fromRGB(180, 180, 180)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 11
+    btn.BorderSizePixel = 0
+    btn.Parent = row
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+
+    btn.MouseButton1Click:Connect(function()
+        State[stateKey] = not State[stateKey]
+        if State[stateKey] then
+            btn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+            btn.Text = "ON"
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+            btn.Text = "OFF"
+            btn.TextColor3 = Color3.fromRGB(180, 180, 180)
+        end
+        if callback then callback(State[stateKey]) end
+    end)
+end
+
+MakeToggle("Silent Aimbot", "AimbotEnabled")
+MakeToggle("Silent Aim (Ray)", "SilentAim")
+MakeToggle("Auto Head Lock", "AutoHead")
+MakeToggle("ESP (Box)", "ESPEnabled")
+MakeToggle("Infinite Ammo", "InfAmmo", function(on)
+    if on then PatchAmmo() end
+end)
+
+-- // TARGET USERNAME INPUT
+local function MakeInput(labelText, placeholder, callback)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 52)
+    row.BackgroundColor3 = Color3.fromRGB(22, 22, 26)
+    row.BorderSizePixel = 0
+    row.Parent = Panel
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -16, 0, 18)
+    lbl.Position = UDim2.new(0, 8, 0, 4)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = labelText
+    lbl.TextColor3 = Color3.fromRGB(160, 160, 160)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 11
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(1, -16, 0, 22)
+    box.Position = UDim2.new(0, 8, 0, 24)
+    box.BackgroundColor3 = Color3.fromRGB(34, 34, 38)
+    box.TextColor3 = Color3.fromRGB(255, 255, 255)
+    box.PlaceholderText = placeholder
+    box.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 12
+    box.Text = ""
+    box.ClearTextOnFocus = false
+    box.BorderSizePixel = 0
+    box.Parent = row
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 5)
+
+    box.FocusLost:Connect(function()
+        if callback then callback(box.Text) end
+    end)
+end
+
+MakeInput("Lock Target (username)", "e.g. xXSniper", function(txt)
+    State.TargetUsername = txt
+end)
+
+-- // TELEPORT INPUT + BUTTON
+local tpRow = Instance.new("Frame")
+tpRow.Size = UDim2.new(1, 0, 0, 56)
+tpRow.BackgroundColor3 = Color3.fromRGB(22, 22, 26)
+tpRow.BorderSizePixel = 0
+tpRow.Parent = Panel
+Instance.new("UICorner", tpRow).CornerRadius = UDim.new(0, 6)
+
+local tpLbl = Instance.new("TextLabel")
+tpLbl.Size = UDim2.new(1, -16, 0, 16)
+tpLbl.Position = UDim2.new(0, 8, 0, 4)
+tpLbl.BackgroundTransparency = 1
+tpLbl.Text = "Teleport to Player"
+tpLbl.TextColor3 = Color3.fromRGB(160, 160, 160)
+tpLbl.Font = Enum.Font.Gotham
+tpLbl.TextSize = 11
+tpLbl.TextXAlignment = Enum.TextXAlignment.Left
+tpLbl.Parent = tpRow
+
+local tpBox = Instance.new("TextBox")
+tpBox.Size = UDim2.new(0.62, 0, 0, 24)
+tpBox.Position = UDim2.new(0, 8, 0, 24)
+tpBox.BackgroundColor3 = Color3.fromRGB(34, 34, 38)
+tpBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+tpBox.PlaceholderText = "username..."
+tpBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+tpBox.Font = Enum.Font.Gotham
+tpBox.TextSize = 12
+tpBox.Text = ""
+tpBox.ClearTextOnFocus = false
+tpBox.BorderSizePixel = 0
+tpBox.Parent = tpRow
+Instance.new("UICorner", tpBox).CornerRadius = UDim.new(0, 5)
+
+local tpBtn = Instance.new("TextButton")
+tpBtn.Size = UDim2.new(0.3, 0, 0, 24)
+tpBtn.Position = UDim2.new(0.68, 0, 0, 24)
+tpBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+tpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+tpBtn.Text = "GO"
+tpBtn.Font = Enum.Font.GothamBold
+tpBtn.TextSize = 12
+tpBtn.BorderSizePixel = 0
+tpBtn.Parent = tpRow
+Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 5)
+
+tpBtn.MouseButton1Click:Connect(function()
+    local ok, name = TeleportToUsername(tpBox.Text)
+    tpBtn.Text = ok and ("→ " .. (name or "?")) or "MISS"
+    task.delay(1.5, function() tpBtn.Text = "GO" end)
+end)
+
+-- // PANEL TOGGLE
+ToggleBtn.MouseButton1Click:Connect(function()
+    State.PanelVisible = not State.PanelVisible
+    Panel.Visible = State.PanelVisible
+    ToggleBtn.TextColor3 = State.PanelVisible and Color3.fromRGB(255, 80, 80) or Color3.fromRGB(120, 120, 120)
+end)
+
+print("[ONYX V10] Live — Strike Warfare Universal loaded. 6767")
