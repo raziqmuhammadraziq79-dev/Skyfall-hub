@@ -1,0 +1,305 @@
+-- ⚡ ROBLOX ESP AIMBOT SCRIPT - ALL IN ONE
+-- Compatibility: Delta Executor (Mobile)
+-- Creator: wleo
+-- Features: ESP Diamond, Aimbot Auto-Lock, Toggle Panel
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+
+local CONFIG = {
+    ESP_ENABLED = true,
+    AIMBOT_ENABLED = true,
+    PANEL_VISIBLE = true,
+    ESP_DISTANCE = 500,
+    AIM_SMOOTHNESS = 0.15,
+    LOCK_NEAREST = true,
+    TARGET_HEAD = true,
+}
+
+local COLORS = {
+    ENEMY = Color3.fromRGB(255, 50, 50),
+    ALLY = Color3.fromRGB(50, 200, 50),
+    NEUTRAL = Color3.fromRGB(100, 100, 255),
+}
+
+local ESP_OBJECTS = {}
+local CURRENT_TARGET = nil
+
+-- ═══════════════════════════════════════════════
+-- 🔷 DIAMOND ESP BUILDER
+-- ═══════════════════════════════════════════════
+
+local function CreateDiamondESP(player, color)
+    local character = player.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        return nil
+    end
+
+    local hrp = character.HumanoidRootPart
+    local part = Instance.new("Part")
+    part.Name = "ESP_Diamond_" .. player.Name
+    part.Shape = Enum.PartType.Ball
+    part.CanCollide = false
+    part.CFrame = hrp.CFrame
+    part.Size = Vector3.new(0.3, 0.3, 0.3)
+    part.Color = color
+    part.Material = Enum.Material.Neon
+    part.TopSurface = Enum.SurfaceType.Smooth
+    part.BottomSurface = Enum.SurfaceType.Smooth
+    part.Parent = workspace
+
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(0, 0, 0)
+    bodyVelocity.Parent = part
+
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = hrp
+    weld.Part1 = part
+    weld.Parent = part
+
+    return part
+end
+
+-- ═══════════════════════════════════════════════
+-- 👁️ UPDATE ESP
+-- ═══════════════════════════════════════════════
+
+local function UpdateESP()
+    if not CONFIG.ESP_ENABLED then return end
+
+    for player, espPart in pairs(ESP_OBJECTS) do
+        if not player.Parent or not player.Character then
+            if espPart then espPart:Destroy() end
+            ESP_OBJECTS[player] = nil
+        else
+            local character = player.Character
+            if character:FindFirstChild("HumanoidRootPart") then
+                local hrp = character.HumanoidRootPart
+                local distance = (hrp.Position - Camera.CFrame.Position).Magnitude
+
+                if distance > CONFIG.ESP_DISTANCE then
+                    if espPart then
+                        espPart.Parent = nil
+                    end
+                else
+                    if espPart.Parent == nil then
+                        espPart.Parent = workspace
+                    end
+                end
+            end
+        end
+    end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == Players.LocalPlayer then continue end
+
+        local character = player.Character
+        if not character or not character:FindFirstChild("HumanoidRootPart") then continue end
+
+        if not ESP_OBJECTS[player] then
+            local color = COLORS.ENEMY
+            local espPart = CreateDiamondESP(player, color)
+            ESP_OBJECTS[player] = espPart
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════
+-- 🎯 FIND NEAREST ENEMY
+-- ═══════════════════════════════════════════════
+
+local function FindNearestTarget()
+    local nearestPlayer = nil
+    local shortestDistance = math.huge
+    local localCharacter = Players.LocalPlayer.Character
+
+    if not localCharacter or not localCharacter:FindFirstChild("HumanoidRootPart") then
+        return nil
+    end
+
+    local localPosition = localCharacter.HumanoidRootPart.Position
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == Players.LocalPlayer then continue end
+
+        local character = player.Character
+        if not character or not character:FindFirstChild("Humanoid") then continue end
+        if character.Humanoid.Health <= 0 then continue end
+
+        local targetPart = character:FindFirstChild("HumanoidRootPart")
+        if not targetPart then continue end
+
+        local distance = (targetPart.Position - localPosition).Magnitude
+
+        if distance < shortestDistance and distance <= CONFIG.ESP_DISTANCE then
+            shortestDistance = distance
+            nearestPlayer = player
+        end
+    end
+
+    return nearestPlayer
+end
+
+-- ═══════════════════════════════════════════════
+-- 🔒 AIMBOT AUTO-LOCK
+-- ═══════════════════════════════════════════════
+
+local function AimbotLock()
+    if not CONFIG.AIMBOT_ENABLED then return end
+
+    CURRENT_TARGET = FindNearestTarget()
+
+    if not CURRENT_TARGET or not CURRENT_TARGET.Character then
+        return
+    end
+
+    local targetCharacter = CURRENT_TARGET.Character
+    local targetPart = CONFIG.TARGET_HEAD and targetCharacter:FindFirstChild("Head") or targetCharacter:FindFirstChild("HumanoidRootPart")
+
+    if not targetPart then return end
+
+    local targetPosition = targetPart.Position
+    local cameraPosition = Camera.CFrame.Position
+    local direction = (targetPosition - cameraPosition).Unit
+
+    local newCFrame = CFrame.new(cameraPosition, cameraPosition + direction)
+    Camera.CFrame = Camera.CFrame:Lerp(newCFrame, CONFIG.AIM_SMOOTHNESS)
+end
+
+-- ═══════════════════════════════════════════════
+-- 🎛️ TOGGLE PANEL UI
+-- ═══════════════════════════════════════════════
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ESP_Aimbot_Panel"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 250, 0, 180)
+MainFrame.Position = UDim2.new(0, 20, 0, 20)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+MainFrame.BorderSizePixel = 2
+MainFrame.BorderColor3 = Color3.fromRGB(255, 50, 50)
+MainFrame.Parent = ScreenGui
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Name = "Title"
+TitleLabel.Size = UDim2.new(1, 0, 0, 30)
+TitleLabel.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextSize = 16
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.Text = "🔷 ESP AIMBOT"
+TitleLabel.Parent = MainFrame
+
+-- ESP Toggle Button
+local ESPButton = Instance.new("TextButton")
+ESPButton.Name = "ESPToggle"
+ESPButton.Size = UDim2.new(1, -10, 0, 35)
+ESPButton.Position = UDim2.new(0, 5, 0, 40)
+ESPButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+ESPButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ESPButton.TextSize = 14
+ESPButton.Font = Enum.Font.Gotham
+ESPButton.Text = "ESP: ON"
+ESPButton.Parent = MainFrame
+
+ESPButton.MouseButton1Click:Connect(function()
+    CONFIG.ESP_ENABLED = not CONFIG.ESP_ENABLED
+    ESPButton.Text = CONFIG.ESP_ENABLED and "ESP: ON" or "ESP: OFF"
+    ESPButton.BackgroundColor3 = CONFIG.ESP_ENABLED and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(150, 50, 50)
+end)
+
+-- Aimbot Toggle Button
+local AimbotButton = Instance.new("TextButton")
+AimbotButton.Name = "AimbotToggle"
+AimbotButton.Size = UDim2.new(1, -10, 0, 35)
+AimbotButton.Position = UDim2.new(0, 5, 0, 80)
+AimbotButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+AimbotButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+AimbotButton.TextSize = 14
+AimbotButton.Font = Enum.Font.Gotham
+AimbotButton.Text = "AIMBOT: ON"
+AimbotButton.Parent = MainFrame
+
+AimbotButton.MouseButton1Click:Connect(function()
+    CONFIG.AIMBOT_ENABLED = not CONFIG.AIMBOT_ENABLED
+    AimbotButton.Text = CONFIG.AIMBOT_ENABLED and "AIMBOT: ON" or "AIMBOT: OFF"
+    AimbotButton.BackgroundColor3 = CONFIG.AIMBOT_ENABLED and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(150, 50, 50)
+end)
+
+-- Close Button
+local CloseButton = Instance.new("TextButton")
+CloseButton.Name = "Close"
+CloseButton.Size = UDim2.new(1, -10, 0, 30)
+CloseButton.Position = UDim2.new(0, 5, 0, 120)
+CloseButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.TextSize = 12
+CloseButton.Font = Enum.Font.Gotham
+CloseButton.Text = "CLOSE PANEL"
+CloseButton.Parent = MainFrame
+
+CloseButton.MouseButton1Click:Connect(function()
+    CONFIG.PANEL_VISIBLE = not CONFIG.PANEL_VISIBLE
+    MainFrame.Visible = CONFIG.PANEL_VISIBLE
+end)
+
+-- ═══════════════════════════════════════════════
+-- ⌨️ KEYBOARD SHORTCUTS
+-- ═══════════════════════════════════════════════
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    if input.KeyCode == Enum.KeyCode.E then
+        CONFIG.ESP_ENABLED = not CONFIG.ESP_ENABLED
+        ESPButton.Text = CONFIG.ESP_ENABLED and "ESP: ON" or "ESP: OFF"
+    elseif input.KeyCode == Enum.KeyCode.R then
+        CONFIG.AIMBOT_ENABLED = not CONFIG.AIMBOT_ENABLED
+        AimbotButton.Text = CONFIG.AIMBOT_ENABLED and "AIMBOT: ON" or "AIMBOT: OFF"
+    elseif input.KeyCode == Enum.KeyCode.P then
+        CONFIG.PANEL_VISIBLE = not CONFIG.PANEL_VISIBLE
+        MainFrame.Visible = CONFIG.PANEL_VISIBLE
+    end
+end)
+
+-- ═══════════════════════════════════════════════
+-- 🔄 MAIN LOOP
+-- ═══════════════════════════════════════════════
+
+RunService.RenderStepped:Connect(function()
+    if CONFIG.ESP_ENABLED then
+        UpdateESP()
+    end
+    
+    if CONFIG.AIMBOT_ENABLED then
+        AimbotLock()
+    end
+end)
+
+-- ═══════════════════════════════════════════════
+-- 🗑️ CLEANUP
+-- ═══════════════════════════════════════════════
+
+Players.PlayerRemoving:Connect(function(player)
+    if ESP_OBJECTS[player] then
+        ESP_OBJECTS[player]:Destroy()
+        ESP_OBJECTS[player] = nil
+    end
+end)
+
+game:GetService("RunService").Heartbeat:Connect(function()
+    if not Players.LocalPlayer.Parent then
+        for _, part in pairs(ESP_OBJECTS) do
+            if part then part:Destroy() end
+        end
+        ESP_OBJECTS = {}
+    end
+end)
+
+print("✅ ESP Aimbot Script Loaded Successfully")
