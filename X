@@ -1,0 +1,713 @@
+-- ⚡ PHANTOM FORCES ESP AIMBOT ULTIMATE
+-- Compatibility: Delta Executor (Mobile)
+-- Creator: wleo
+-- Version: 3.0 COMPLETE FIX
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+local CONFIG = {
+    ESP_ENABLED = true,
+    AIMBOT_ENABLED = false,
+    PANEL_VISIBLE = true,
+    ESP_DISTANCE = 800,
+    AIM_SMOOTHNESS = 0.06,
+    LOCK_NEAREST = true,
+    TARGET_HEAD = true,
+    SHOW_DISTANCE = true,
+    SHOW_HEALTH = true,
+    TRACERS_ENABLED = false,
+    BOX_ESP = true,
+    PREDICTION_ENABLED = true,
+    AUTO_SEARCH = true,
+    MANUAL_AIM = true,
+}
+
+local COLORS = {
+    ENEMY = Color3.fromRGB(255, 50, 50),
+    ALLY = Color3.fromRGB(50, 180, 100),
+    TEXT = Color3.fromRGB(255, 255, 255),
+    PANEL_BG = Color3.fromRGB(15, 15, 25),
+    PANEL_ACCENT = Color3.fromRGB(255, 50, 50),
+    BUTTON_ON = Color3.fromRGB(50, 180, 100),
+    BUTTON_OFF = Color3.fromRGB(180, 50, 50),
+}
+
+local ESP_OBJECTS = {}
+local CURRENT_TARGET = nil
+local PLAYER_TEAMS = {}
+
+-- ═══════════════════════════════════════════════
+-- 🔍 ADVANCED TEAM DETECTION
+-- ═══════════════════════════════════════════════
+
+local function UpdateTeamCache()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character then
+            local character = player.Character
+            local humanoid = character:FindFirstChild("Humanoid")
+            
+            if humanoid then
+                local teamValue = nil
+                
+                -- Method 1: Check Humanoid tag
+                if humanoid:FindFirstChild("Team") then
+                    teamValue = humanoid.Team
+                end
+                
+                -- Method 2: Check Character tag
+                if not teamValue and character:FindFirstChild("Team") then
+                    teamValue = character.Team
+                end
+                
+                -- Method 3: Check parent Player team
+                if not teamValue and player:FindFirstChild("Team") then
+                    teamValue = player.Team
+                end
+                
+                -- Method 4: Check Team attribute
+                if not teamValue then
+                    teamValue = humanoid:GetAttribute("Team") or character:GetAttribute("Team")
+                end
+                
+                PLAYER_TEAMS[player.UserId] = teamValue
+            end
+        end
+    end
+end
+
+local function IsEnemyPlayer(player)
+    if player == LocalPlayer then return false end
+    
+    UpdateTeamCache()
+    
+    local localTeam = PLAYER_TEAMS[LocalPlayer.UserId]
+    local playerTeam = PLAYER_TEAMS[player.UserId]
+    
+    -- Jika tidak bisa detect team, anggap berbeda team
+    if not localTeam or not playerTeam then
+        return true
+    end
+    
+    return localTeam ~= playerTeam
+end
+
+-- ═══════════════════════════════════════════════
+-- 🔷 PREMIUM ESP RENDERER
+-- ═══════════════════════════════════════════════
+
+local function CreatePremiumESP(player, color)
+    local character = player.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        return nil
+    end
+
+    local espContainer = Instance.new("Model")
+    espContainer.Name = "ESP_" .. player.Name
+    espContainer.Parent = workspace
+
+    local hrp = character.HumanoidRootPart
+
+    -- Main Diamond Crystal
+    local diamond = Instance.new("Part")
+    diamond.Name = "Diamond"
+    diamond.Shape = Enum.PartType.Ball
+    diamond.CanCollide = false
+    diamond.Size = Vector3.new(0.6, 0.6, 0.6)
+    diamond.Color = color
+    diamond.Material = Enum.Material.Neon
+    diamond.CFrame = hrp.CFrame + Vector3.new(0, 3, 0)
+    diamond.Parent = espContainer
+
+    local weld1 = Instance.new("WeldConstraint")
+    weld1.Part0 = hrp
+    weld1.Part1 = diamond
+    weld1.Parent = diamond
+
+    -- Box Outline
+    local box = Instance.new("Part")
+    box.Name = "BoxOutline"
+    box.Shape = Enum.PartType.Block
+    box.CanCollide = false
+    box.Size = Vector3.new(2, 4, 2)
+    box.Color = color
+    box.Transparency = 0.8
+    box.Material = Enum.Material.ForceField
+    box.CFrame = hrp.CFrame
+    box.Parent = espContainer
+
+    local weld2 = Instance.new("WeldConstraint")
+    weld2.Part0 = hrp
+    weld2.Part1 = box
+    weld2.Parent = box
+
+    -- Head Marker (Gold)
+    if character:FindFirstChild("Head") then
+        local headMarker = Instance.new("Part")
+        headMarker.Name = "HeadMarker"
+        headMarker.Shape = Enum.PartType.Ball
+        headMarker.CanCollide = false
+        headMarker.Size = Vector3.new(0.7, 0.7, 0.7)
+        headMarker.Color = Color3.fromRGB(255, 215, 0)
+        headMarker.Material = Enum.Material.Neon
+        headMarker.Transparency = 0.2
+        headMarker.Parent = espContainer
+
+        local weld3 = Instance.new("WeldConstraint")
+        weld3.Part0 = character.Head
+        weld3.Part1 = headMarker
+        weld3.Parent = headMarker
+    end
+
+    -- Info Label Surface
+    local infoPanel = Instance.new("Part")
+    infoPanel.Name = "InfoPanel"
+    infoPanel.CanCollide = false
+    infoPanel.Size = Vector3.new(3, 1.5, 0.1)
+    infoPanel.Color = Color3.fromRGB(0, 0, 0)
+    infoPanel.Transparency = 0.3
+    infoPanel.Material = Enum.Material.SmoothPlastic
+    infoPanel.Parent = espContainer
+
+    local weld4 = Instance.new("WeldConstraint")
+    weld4.Part0 = hrp
+    weld4.Part1 = infoPanel
+    weld4.Parent = infoPanel
+
+    local infoGui = Instance.new("SurfaceGui")
+    infoGui.Face = Enum.NormalId.Front
+    infoGui.Parent = infoPanel
+
+    local playerLabel = Instance.new("TextLabel")
+    playerLabel.Name = "PlayerName"
+    playerLabel.Size = UDim2.new(1, 0, 0.4, 0)
+    playerLabel.BackgroundTransparency = 1
+    playerLabel.TextColor3 = COLORS.TEXT
+    playerLabel.TextSize = 16
+    playerLabel.Font = Enum.Font.GothamBold
+    playerLabel.Text = player.Name
+    playerLabel.Parent = infoGui
+
+    local healthLabel = Instance.new("TextLabel")
+    healthLabel.Name = "Health"
+    healthLabel.Size = UDim2.new(0.5, 0, 0.3, 0)
+    healthLabel.Position = UDim2.new(0, 0, 0.4, 0)
+    healthLabel.BackgroundTransparency = 1
+    healthLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    healthLabel.TextSize = 13
+    healthLabel.Font = Enum.Font.Gotham
+    healthLabel.Text = "HP: 100"
+    healthLabel.Parent = infoGui
+
+    local distLabel = Instance.new("TextLabel")
+    distLabel.Name = "Distance"
+    distLabel.Size = UDim2.new(0.5, 0, 0.3, 0)
+    distLabel.Position = UDim2.new(0.5, 0, 0.4, 0)
+    distLabel.BackgroundTransparency = 1
+    distLabel.TextColor3 = Color3.fromRGB(150, 150, 255)
+    distLabel.TextSize = 13
+    distLabel.Font = Enum.Font.Gotham
+    distLabel.Text = "0m"
+    distLabel.Parent = infoGui
+
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Name = "Status"
+    statusLabel.Size = UDim2.new(1, 0, 0.3, 0)
+    statusLabel.Position = UDim2.new(0, 0, 0.7, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.TextColor3 = color
+    statusLabel.TextSize = 12
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.Text = "ENEMY"
+    statusLabel.Parent = infoGui
+
+    return {
+        Container = espContainer,
+        Diamond = diamond,
+        Box = box,
+        InfoPanel = infoPanel,
+        PlayerLabel = playerLabel,
+        HealthLabel = healthLabel,
+        DistLabel = distLabel,
+        StatusLabel = statusLabel,
+    }
+end
+
+-- ═══════════════════════════════════════════════
+-- 👁️ UPDATE ESP SYSTEM
+-- ═══════════════════════════════════════════════
+
+local function UpdateESPVisuals()
+    if not CONFIG.ESP_ENABLED then return end
+
+    local localHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not localHRP then return end
+
+    -- Clean dead players
+    for player, espData in pairs(ESP_OBJECTS) do
+        if not player.Parent or not player.Character then
+            pcall(function()
+                if espData.Container then espData.Container:Destroy() end
+            end)
+            ESP_OBJECTS[player] = nil
+        else
+            local character = player.Character
+            if character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Humanoid") then
+                local hrp = character.HumanoidRootPart
+                local humanoid = character.Humanoid
+                local distance = (hrp.Position - localHRP.Position).Magnitude
+
+                if distance > CONFIG.ESP_DISTANCE then
+                    pcall(function()
+                        espData.Container.Parent = nil
+                    end)
+                else
+                    pcall(function()
+                        espData.Container.Parent = workspace
+
+                        -- Update Health
+                        if CONFIG.SHOW_HEALTH then
+                            local hp = math.ceil(humanoid.Health)
+                            espData.HealthLabel.Text = "HP: " .. hp
+                            if hp > 75 then
+                                espData.HealthLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+                            elseif hp > 40 then
+                                espData.HealthLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+                            else
+                                espData.HealthLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+                            end
+                        end
+
+                        -- Update Distance
+                        if CONFIG.SHOW_DISTANCE then
+                            espData.DistLabel.Text = string.format("%.1f m", distance)
+                        end
+                    end)
+                end
+            end
+        end
+    end
+
+    -- Create ESP for new enemies
+    UpdateTeamCache()
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if not IsEnemyPlayer(player) then continue end
+
+        local character = player.Character
+        if not character or not character:FindFirstChild("HumanoidRootPart") then continue end
+
+        if not ESP_OBJECTS[player] then
+            local espData = CreatePremiumESP(player, COLORS.ENEMY)
+            if espData then
+                ESP_OBJECTS[player] = espData
+            end
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════
+-- 🎯 FIND NEAREST ENEMY (FIXED AUTO SEARCH)
+-- ═══════════════════════════════════════════════
+
+local function FindNearestEnemy()
+    local nearest = nil
+    local shortestDist = math.huge
+    local localHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    
+    if not localHRP then return nil end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if not IsEnemyPlayer(player) then continue end
+
+        local character = player.Character
+        if not character or not character:FindFirstChild("Humanoid") then continue end
+        if character.Humanoid.Health <= 0 then continue end
+
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        local dist = (hrp.Position - localHRP.Position).Magnitude
+        
+        if dist < shortestDist and dist <= CONFIG.ESP_DISTANCE then
+            shortestDist = dist
+            nearest = player
+        end
+    end
+
+    return nearest
+end
+
+-- ═══════════════════════════════════════════════
+-- 🔒 SOFT AIMBOT ASSIST (MANUAL + AUTO)
+-- ═══════════════════════════════════════════════
+
+local function SoftAimbotAssist()
+    if not CONFIG.AIMBOT_ENABLED then return end
+
+    if CONFIG.AUTO_SEARCH then
+        CURRENT_TARGET = FindNearestEnemy()
+    end
+
+    if not CURRENT_TARGET or not CURRENT_TARGET.Character then
+        return
+    end
+
+    local targetChar = CURRENT_TARGET.Character
+    if not targetChar:FindFirstChild("Humanoid") or targetChar.Humanoid.Health <= 0 then
+        CURRENT_TARGET = nil
+        return
+    end
+
+    local targetPart = CONFIG.TARGET_HEAD and targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetPart then return end
+
+    local camera = Camera
+    local targetPos = targetPart.Position
+    local camPos = camera.CFrame.Position
+
+    -- Prediction
+    if CONFIG.PREDICTION_ENABLED then
+        local hrp = targetChar:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local vel = hrp.AssemblyLinearVelocity
+            local dist = (targetPos - camPos).Magnitude
+            local timeToTarget = dist / 500
+            targetPos = targetPos + (vel * timeToTarget * 0.5)
+        end
+    end
+
+    local direction = (targetPos - camPos).Unit
+    local newCFrame = CFrame.new(camPos, camPos + direction)
+    
+    -- SOFT LOCK - bukan hard lock!
+    camera.CFrame = camera.CFrame:Lerp(newCFrame, CONFIG.AIM_SMOOTHNESS)
+end
+
+-- ═══════════════════════════════════════════════
+-- 🎛️ PREMIUM UI PANEL
+-- ═══════════════════════════════════════════════
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "PremiumESPPanel"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local MainPanel = Instance.new("Frame")
+MainPanel.Name = "MainPanel"
+MainPanel.Size = UDim2.new(0, 300, 0, 520)
+MainPanel.Position = UDim2.new(0, 15, 0, 15)
+MainPanel.BackgroundColor3 = COLORS.PANEL_BG
+MainPanel.BorderSizePixel = 2
+MainPanel.BorderColor3 = COLORS.PANEL_ACCENT
+MainPanel.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 10)
+Corner.Parent = MainPanel
+
+-- Header
+local Header = Instance.new("Frame")
+Header.Name = "Header"
+Header.Size = UDim2.new(1, 0, 0, 50)
+Header.BackgroundColor3 = COLORS.PANEL_ACCENT
+Header.BorderSizePixel = 0
+Header.Parent = MainPanel
+
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 10)
+HeaderCorner.Parent = Header
+
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(0.7, 0, 1, 0)
+Title.BackgroundTransparency = 1
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 18
+Title.Font = Enum.Font.GothamBold
+Title.Text = "🔷 PHANTOM ESP"
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Header
+
+local HideBtn = Instance.new("TextButton")
+HideBtn.Name = "HideBtn"
+HideBtn.Size = UDim2.new(0, 40, 1, 0)
+HideBtn.Position = UDim2.new(1, -45, 0, 0)
+HideBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+HideBtn.BorderSizePixel = 0
+HideBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+HideBtn.TextSize = 18
+HideBtn.Font = Enum.Font.GothamBold
+HideBtn.Text = "−"
+HideBtn.Parent = Header
+
+HideBtn.MouseButton1Click:Connect(function()
+    CONFIG.PANEL_VISIBLE = not CONFIG.PANEL_VISIBLE
+    MainPanel.Visible = CONFIG.PANEL_VISIBLE
+end)
+
+-- Scrollable Content
+local Content = Instance.new("ScrollingFrame")
+Content.Name = "Content"
+Content.Size = UDim2.new(1, -10, 1, -65)
+Content.Position = UDim2.new(0, 5, 0, 55)
+Content.BackgroundTransparency = 1
+Content.BorderSizePixel = 0
+Content.ScrollBarThickness = 5
+Content.Parent = MainPanel
+
+local Layout = Instance.new("UIListLayout")
+Layout.Padding = UDim.new(0, 10)
+Layout.Parent = Content
+
+-- Function: Create Toggle
+local function CreateToggle(text, initVal, callback)
+    local frame = Instance.new("Frame")
+    frame.Name = text
+    frame.Size = UDim2.new(1, -10, 0, 45)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    frame.BorderSizePixel = 1
+    frame.BorderColor3 = Color3.fromRGB(80, 80, 100)
+    frame.Parent = Content
+
+    local frameCorner = Instance.new("UICorner")
+    frameCorner.CornerRadius = UDim.new(0, 6)
+    frameCorner.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = COLORS.TEXT
+    label.TextSize = 14
+    label.Font = Enum.Font.Gotham
+    label.Text = text
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local btn = Instance.new("TextButton")
+    btn.Name = "Toggle"
+    btn.Size = UDim2.new(0.35, -5, 0.7, 0)
+    btn.Position = UDim2.new(0.62, 0, 0.15, 0)
+    btn.BackgroundColor3 = initVal and COLORS.BUTTON_ON or COLORS.BUTTON_OFF
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 12
+    btn.Font = Enum.Font.GothamBold
+    btn.Text = initVal and "ON" or "OFF"
+    btn.Parent = frame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = btn
+
+    local state = initVal
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = state and "ON" or "OFF"
+        btn.BackgroundColor3 = state and COLORS.BUTTON_ON or COLORS.BUTTON_OFF
+        callback(state)
+    end)
+
+    return frame
+end
+
+-- Function: Create Slider
+local function CreateSlider(text, minVal, maxVal, initVal, callback)
+    local frame = Instance.new("Frame")
+    frame.Name = text
+    frame.Size = UDim2.new(1, -10, 0, 60)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    frame.BorderSizePixel = 1
+    frame.BorderColor3 = Color3.fromRGB(80, 80, 100)
+    frame.Parent = Content
+
+    local frameCorner = Instance.new("UICorner")
+    frameCorner.CornerRadius = UDim.new(0, 6)
+    frameCorner.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 0.4, 0)
+    label.Position = UDim2.new(0, 5, 0, 2)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = COLORS.TEXT
+    label.TextSize = 13
+    label.Font = Enum.Font.GothamBold
+    label.Text = text .. ": " .. initVal
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(1, -10, 0, 5)
+    bar.Position = UDim2.new(0, 5, 0.45, 0)
+    bar.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    bar.BorderSizePixel = 0
+    bar.Parent = frame
+
+    local barCorner = Instance.new("UICorner")
+    barCorner.CornerRadius = UDim.new(0, 2)
+    barCorner.Parent = bar
+
+    local thumb = Instance.new("TextButton")
+    thumb.Size = UDim2.new(0, 12, 0, 12)
+    thumb.Position = UDim2.new((initVal - minVal) / (maxVal - minVal), -6, 0.5, -6)
+    thumb.BackgroundColor3 = COLORS.PANEL_ACCENT
+    thumb.BorderSizePixel = 0
+    thumb.Text = ""
+    thumb.Parent = bar
+
+    local thumbCorner = Instance.new("UICorner")
+    thumbCorner.CornerRadius = UDim.new(0, 6)
+    thumbCorner.Parent = thumb
+
+    local dragging = false
+
+    thumb.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mouse = UserInputService:GetMouseLocation()
+            local barAbsX = bar.AbsolutePosition.X
+            local barAbsSize = bar.AbsoluteSize.X
+            local relPos = math.clamp(mouse.X - barAbsX, 0, barAbsSize)
+            local pct = relPos / barAbsSize
+            local val = math.floor(minVal + (maxVal - minVal) * pct)
+
+            thumb.Position = UDim2.new(pct, -6, 0.5, -6)
+            label.Text = text .. ": " .. val
+            callback(val)
+        end
+    end)
+
+    return frame
+end
+
+-- Add UI Controls
+CreateToggle("ESP Enable", CONFIG.ESP_ENABLED, function(state)
+    CONFIG.ESP_ENABLED = state
+end)
+
+CreateToggle("Aimbot", CONFIG.AIMBOT_ENABLED, function(state)
+    CONFIG.AIMBOT_ENABLED = state
+end)
+
+CreateToggle("Auto Search", CONFIG.AUTO_SEARCH, function(state)
+    CONFIG.AUTO_SEARCH = state
+end)
+
+CreateToggle("Target Head", CONFIG.TARGET_HEAD, function(state)
+    CONFIG.TARGET_HEAD = state
+end)
+
+CreateToggle("Show Distance", CONFIG.SHOW_DISTANCE, function(state)
+    CONFIG.SHOW_DISTANCE = state
+end)
+
+CreateToggle("Show Health", CONFIG.SHOW_HEALTH, function(state)
+    CONFIG.SHOW_HEALTH = state
+end)
+
+CreateToggle("Prediction", CONFIG.PREDICTION_ENABLED, function(state)
+    CONFIG.PREDICTION_ENABLED = state
+end)
+
+CreateToggle("Box ESP", CONFIG.BOX_ESP, function(state)
+    CONFIG.BOX_ESP = state
+end)
+
+-- Add Sliders
+CreateSlider("ESP Distance", 100, 1500, CONFIG.ESP_DISTANCE, function(val)
+    CONFIG.ESP_DISTANCE = val
+end)
+
+CreateSlider("Aim Smooth", 1, 20, math.floor(CONFIG.AIM_SMOOTHNESS * 100), function(val)
+    CONFIG.AIM_SMOOTHNESS = val / 100
+end)
+
+-- Footer
+local Footer = Instance.new("Frame")
+Footer.Name = "Footer"
+Footer.Size = UDim2.new(1, 0, 0, 50)
+Footer.Position = UDim2.new(0, 0, 1, -50)
+Footer.BackgroundColor3 = COLORS.PANEL_ACCENT
+Footer.BorderSizePixel = 0
+Footer.Parent = MainPanel
+
+local FooterCorner = Instance.new("UICorner")
+FooterCorner.CornerRadius = UDim.new(0, 10)
+FooterCorner.Parent = Footer
+
+local Status = Instance.new("TextLabel")
+Status.Name = "Status"
+Status.Size = UDim2.new(1, 0, 1, 0)
+Status.BackgroundTransparency = 1
+Status.TextColor3 = Color3.fromRGB(255, 255, 255)
+Status.TextSize = 12
+Status.Font = Enum.Font.Gotham
+Status.Text = "Ready | No Target"
+Status.Parent = Footer
+
+-- ═══════════════════════════════════════════════
+-- ⌨️ KEYBOARD SHORTCUTS
+-- ═══════════════════════════════════════════════
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    if input.KeyCode == Enum.KeyCode.E then
+        CONFIG.ESP_ENABLED = not CONFIG.ESP_ENABLED
+    elseif input.KeyCode == Enum.KeyCode.R then
+        CONFIG.AIMBOT_ENABLED = not CONFIG.AIMBOT_ENABLED
+    elseif input.KeyCode == Enum.KeyCode.T then
+        CONFIG.AUTO_SEARCH = not CONFIG.AUTO_SEARCH
+    elseif input.KeyCode == Enum.KeyCode.P then
+        MainPanel.Visible = not MainPanel.Visible
+    end
+end)
+
+-- ═══════════════════════════════════════════════
+-- 🔄 MAIN LOOP
+-- ═══════════════════════════════════════════════
+
+RunService.RenderStepped:Connect(function()
+    if CONFIG.ESP_ENABLED then
+        UpdateESPVisuals()
+    end
+
+    if CONFIG.AIMBOT_ENABLED then
+        SoftAimbotAssist()
+    end
+
+    -- Update Status
+    local targetName = CURRENT_TARGET and CURRENT_TARGET.Name or "No Target"
+    Status.Text = "Active | Target: " .. targetName
+end)
+
+-- ═══════════════════════════════════════════════
+-- 🗑️ CLEANUP
+-- ═══════════════════════════════════════════════
+
+Players.PlayerRemoving:Connect(function(player)
+    if ESP_OBJECTS[player] then
+        pcall(function()
+            if ESP_OBJECTS[player].Container then
+                ESP_OBJECTS[player].Container:Destroy()
+            end
+        end)
+        ESP_OBJECTS[player] = nil
+    end
+    PLAYER_TEAMS[player.UserId] = nil
+end)
+
+print("✅ Phantom Forces ESP Aimbot Loaded")
+print("⌨️ Shortcuts: E=ESP | R=Aimbot | T=AutoSearch | P=Panel")
+print("🎯 Team Detection: Enabled | Friendly Fire: Disabled")
