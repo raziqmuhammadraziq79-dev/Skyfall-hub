@@ -1,0 +1,138 @@
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local ESP = false
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "DebugAdminPanel"
+gui.ResetOnSpawn = false
+gui.Parent = PlayerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(230,140)
+frame.Position = UDim2.new(0,20,0.5,-70)
+frame.BackgroundColor3 = Color3.fromRGB(28,28,28)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Parent = gui
+
+local corner = Instance.new("UICorner", frame)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,0,35)
+title.BackgroundTransparency = 1
+title.Text = "DEBUG PANEL"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextColor3 = Color3.new(1,1,1)
+title.Parent = frame
+
+local toggle = Instance.new("TextButton")
+toggle.Size = UDim2.new(.9,0,0,38)
+toggle.Position = UDim2.new(.05,0,0,45)
+toggle.Text = "Enemy Highlight : OFF"
+toggle.BackgroundColor3 = Color3.fromRGB(180,50,50)
+toggle.TextColor3 = Color3.new(1,1,1)
+toggle.Parent = frame
+
+local hide = Instance.new("TextButton")
+hide.Size = UDim2.new(.9,0,0,28)
+hide.Position = UDim2.new(.05,0,0,92)
+hide.Text = "Hide"
+hide.Parent = frame
+
+local open = Instance.new("TextButton")
+open.Size = UDim2.fromOffset(60,28)
+open.Position = UDim2.new(0,20,.5,-14)
+open.Text = "OPEN"
+open.Visible = false
+open.Parent = gui
+
+-- Drag
+local dragging,startPos,startInput
+
+frame.InputBegan:Connect(function(i)
+	if i.UserInputType==Enum.UserInputType.MouseButton1 then
+		dragging=true
+		startInput=i.Position
+		startPos=frame.Position
+	end
+end)
+
+frame.InputEnded:Connect(function(i)
+	if i.UserInputType==Enum.UserInputType.MouseButton1 then
+		dragging=false
+	end
+end)
+
+UIS.InputChanged:Connect(function(i)
+	if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then
+		local delta=i.Position-startInput
+		frame.Position=UDim2.new(
+			startPos.X.Scale,startPos.X.Offset+delta.X,
+			startPos.Y.Scale,startPos.Y.Offset+delta.Y
+		)
+	end
+end)
+
+local function refresh()
+	for _,plr in ipairs(Players:GetPlayers()) do
+		if plr~=LocalPlayer and plr.Character then
+
+			local old=plr.Character:FindFirstChild("EnemyHighlight")
+			if old then old:Destroy() end
+
+			if ESP and plr.Team~=LocalPlayer.Team then
+				local h=Instance.new("Highlight")
+				h.Name="EnemyHighlight"
+				h.FillColor=Color3.fromRGB(255,0,0)
+				h.FillTransparency=.3
+				h.OutlineColor=Color3.new(1,1,1)
+				h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+				h.Parent=plr.Character
+			end
+		end
+	end
+end
+
+toggle.MouseButton1Click:Connect(function()
+	ESP=not ESP
+
+	if ESP then
+		toggle.Text="Enemy Highlight : ON"
+		toggle.BackgroundColor3=Color3.fromRGB(40,170,70)
+	else
+		toggle.Text="Enemy Highlight : OFF"
+		toggle.BackgroundColor3=Color3.fromRGB(180,50,50)
+	end
+
+	refresh()
+end)
+
+hide.MouseButton1Click:Connect(function()
+	frame.Visible=false
+	open.Visible=true
+end)
+
+open.MouseButton1Click:Connect(function()
+	frame.Visible=true
+	open.Visible=false
+end)
+
+Players.PlayerAdded:Connect(function(plr)
+	plr.CharacterAdded:Connect(function()
+		task.wait(.3)
+		refresh()
+	end)
+end)
+
+for _,plr in ipairs(Players:GetPlayers()) do
+	plr.CharacterAdded:Connect(function()
+		task.wait(.3)
+		refresh()
+	end)
+end
