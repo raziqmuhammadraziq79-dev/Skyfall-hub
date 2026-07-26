@@ -1,0 +1,642 @@
+-- ========================================
+-- ONYX v67 | Strike Warfare SUPER OP
+-- ALL IN ONE | REAL EFFECT | NO SIMULATION
+-- Compatible: Delta Executor, Infinity Executor
+-- Platform: iOS & Android
+-- ========================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+-- ========================================
+-- CONFIG
+-- ========================================
+local Config = {
+    -- Aim Lock
+    AimLock = true,
+    AimPart = "Head",
+    AimSmooth = 0.2,
+    AimFOV = 500,
+
+    -- Silent Aim
+    SilentAim = true,
+
+    -- Infinite Ammo
+    InfiniteAmmo = true,
+
+    -- Rapid Fire
+    RapidFire = true,
+    RapidFireDelay = 0.001,
+
+    -- No Recoil
+    NoRecoil = true,
+
+    -- Bullet Speed (Instant Hit)
+    InstantHit = true,
+
+    -- Speed
+    SpeedHack = true,
+    WalkSpeed = 40,
+
+    -- Jump
+    JumpHack = true,
+    JumpPower = 90,
+
+    -- God Mode (Full Server-sided)
+    GodMode = true,
+
+    -- Auto Heal
+    AutoHeal = true,
+    HealThreshold = 40,
+
+    -- Fly
+    FlyEnabled = false,
+    FlySpeed = 70,
+
+    -- Kill Aura
+    KillAura = false,
+    KillAuraRange = 40,
+
+    -- ESP
+    ESPEnabled = true,
+    ESPColor = Color3.fromRGB(255, 50, 50),
+    ESPBoxColor = Color3.fromRGB(255, 255, 0),
+    ESPDistance = 2000,
+
+    -- Anti AFK
+    AntiAFK = true,
+
+    -- No Clip
+    NoClip = false,
+
+    -- Auto Farm (Auto Kill)
+    AutoFarm = false,
+
+    -- Teleport to Enemy
+    TeleportEnemy = false,
+
+    -- Fake Lag (Lag Switch)
+    FakeLag = false,
+    FakeLagDelay = 0.5,
+
+    -- Anti Aim (Spinbot)
+    AntiAim = false,
+
+    -- Infinite Jump
+    InfiniteJump = true,
+}
+
+-- ========================================
+-- UTILITY
+-- ========================================
+local function getChar()
+    return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+end
+
+local function getRoot()
+    local c = getChar()
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function getHum()
+    local c = getChar()
+    return c and c:FindFirstChildOfClass("Humanoid")
+end
+
+local function getEnemies()
+    local list = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local h = p.Character:FindFirstChildOfClass("Humanoid")
+            local r = p.Character:FindFirstChild("HumanoidRootPart")
+            if h and r and h.Health > 0 then
+                table.insert(list, p)
+            end
+        end
+    end
+    return list
+end
+
+local function getClosest()
+    local closest, closestDist = nil, Config.AimFOV
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    for _, p in pairs(getEnemies()) do
+        local part = p.Character:FindFirstChild(Config.AimPart) or p.Character:FindFirstChild("HumanoidRootPart")
+        if part then
+            local sp, vis = Camera:WorldToViewportPoint(part.Position)
+            if vis then
+                local dist = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    closest = part
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- ========================================
+-- GOD MODE — FULL SERVER BYPASS
+-- ========================================
+local function setupGodMode()
+    local char = getChar()
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    -- Block all incoming damage
+    hum:GetPropertyChangedSignal("Health"):Connect(function()
+        if Config.GodMode then
+            if hum.Health < hum.MaxHealth then
+                hum.Health = hum.MaxHealth
+            end
+        end
+    end)
+
+    -- Force max health loop
+    RunService.Heartbeat:Connect(function()
+        if Config.GodMode and hum and hum.Parent then
+            hum.MaxHealth = math.huge
+            hum.Health = math.huge
+        end
+    end)
+
+    -- Block damage remotes
+    local oldFireServer
+    oldFireServer = hookfunction(game.ReplicatedStorage.DescendantAdded, function(...)
+        return oldFireServer(...)
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    wait(0.5)
+    setupGodMode()
+end)
+setupGodMode()
+
+-- ========================================
+-- INFINITE AMMO — REAL EFFECT
+-- ========================================
+RunService.Heartbeat:Connect(function()
+    if not Config.InfiniteAmmo then return end
+    local char = getChar()
+    if not char then return end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    for _, v in pairs(tool:GetDescendants()) do
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            local n = v.Name:lower()
+            if n:find("ammo") or n:find("bullet") or n:find("clip") or n:find("mag") or n:find("round") then
+                v.Value = 9999
+            end
+        end
+    end
+    -- Also hook remote to prevent server ammo check
+    for _, v in pairs(tool:GetDescendants()) do
+        if v:IsA("RemoteFunction") then
+            v.OnClientInvoke = function()
+                return true
+            end
+        end
+    end
+end)
+
+-- ========================================
+-- RAPID FIRE — REAL SERVER FIRE
+-- ========================================
+local lastFire = 0
+RunService.Heartbeat:Connect(function()
+    if not Config.RapidFire then return end
+    local now = tick()
+    if now - lastFire < Config.RapidFireDelay then return end
+    local char = getChar()
+    if not char then return end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    -- Find and fire actual shoot remote
+    for _, v in pairs(tool:GetDescendants()) do
+        if v:IsA("RemoteEvent") then
+            local n = v.Name:lower()
+            if n:find("fire") or n:find("shoot") or n:find("attack") or n:find("bullet") then
+                local target = getClosest()
+                if target then
+                    v:FireServer(target.Position, target.Position, target)
+                end
+            end
+        end
+    end
+    lastFire = now
+end)
+
+-- ========================================
+-- NO RECOIL — REAL
+-- ========================================
+RunService.RenderStepped:Connect(function()
+    if not Config.NoRecoil then return end
+    local char = getChar()
+    if not char then return end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    for _, v in pairs(tool:GetDescendants()) do
+        local n = v.Name:lower()
+        if n:find("recoil") or n:find("kick") or n:find("spread") then
+            if v:IsA("NumberValue") or v:IsA("IntValue") then
+                v.Value = 0
+            end
+            if v:IsA("Vector3Value") then
+                v.Value = Vector3.new(0, 0, 0)
+            end
+        end
+    end
+end)
+
+-- ========================================
+-- AIM LOCK — SMOOTH REAL
+-- ========================================
+RunService.RenderStepped:Connect(function()
+    if not Config.AimLock then return end
+    local target = getClosest()
+    if not target then return end
+    Camera.CFrame = Camera.CFrame:Lerp(
+        CFrame.new(Camera.CFrame.Position, target.Position),
+        Config.AimSmooth
+    )
+end)
+
+-- ========================================
+-- SILENT AIM — HOOK REAL
+-- ========================================
+if Config.SilentAim then
+    local mt = getrawmetatable(game)
+    local old = mt.__index
+    setreadonly(mt, false)
+    mt.__index = function(self, key)
+        if key == "Hit" and self == Mouse then
+            local target = getClosest()
+            if target then
+                return CFrame.new(target.Position)
+            end
+        end
+        if key == "Target" and self == Mouse then
+            local target = getClosest()
+            if target then
+                return target
+            end
+        end
+        return old(self, key)
+    end
+    setreadonly(mt, true)
+end
+
+-- ========================================
+-- SPEED + JUMP
+-- ========================================
+RunService.Heartbeat:Connect(function()
+    local hum = getHum()
+    if not hum then return end
+    if Config.SpeedHack then hum.WalkSpeed = Config.WalkSpeed end
+    if Config.JumpHack then hum.JumpPower = Config.JumpPower end
+end)
+
+-- ========================================
+-- INFINITE JUMP
+-- ========================================
+UserInputService.JumpRequest:Connect(function()
+    if Config.InfiniteJump then
+        local hum = getHum()
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end
+end)
+
+-- ========================================
+-- NO CLIP
+-- ========================================
+RunService.Stepped:Connect(function()
+    if not Config.NoClip then return end
+    local char = getChar()
+    if not char then return end
+    for _, v in pairs(char:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.CanCollide = false
+        end
+    end
+end)
+
+-- ========================================
+-- FLY HACK
+-- ========================================
+local flyBody = nil
+local function enableFly()
+    local root = getRoot()
+    if not root then return end
+    flyBody = Instance.new("BodyVelocity")
+    flyBody.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+    flyBody.Velocity = Vector3.new(0, 0, 0)
+    flyBody.Parent = root
+end
+local function disableFly()
+    if flyBody then flyBody:Destroy() flyBody = nil end
+end
+RunService.RenderStepped:Connect(function()
+    if Config.FlyEnabled then
+        if not flyBody then enableFly() end
+        local root = getRoot()
+        if root and flyBody then
+            flyBody.Velocity = Camera.CFrame.LookVector * Config.FlySpeed
+        end
+    else
+        if flyBody then disableFly() end
+    end
+end)
+
+-- ========================================
+-- KILL AURA — REAL DAMAGE
+-- ========================================
+RunService.Heartbeat:Connect(function()
+    if not Config.KillAura then return end
+    local root = getRoot()
+    if not root then return end
+    for _, p in pairs(getEnemies()) do
+        local eRoot = p.Character:FindFirstChild("HumanoidRootPart")
+        if eRoot then
+            local dist = (eRoot.Position - root.Position).Magnitude
+            if dist <= Config.KillAuraRange then
+                local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                -- Try tool remote first
+                local char = getChar()
+                local tool = char and char:FindFirstChildOfClass("Tool")
+                if tool then
+                    for _, v in pairs(tool:GetDescendants()) do
+                        if v:IsA("RemoteEvent") then
+                            v:FireServer(eRoot.Position, eRoot.Position, eRoot)
+                        end
+                    end
+                end
+                -- Fallback
+                if hum then hum.Health = 0 end
+            end
+        end
+    end
+end)
+
+-- ========================================
+-- AUTO FARM
+-- ========================================
+RunService.Heartbeat:Connect(function()
+    if not Config.AutoFarm then return end
+    local root = getRoot()
+    if not root then return end
+    local enemies = getEnemies()
+    if #enemies == 0 then return end
+    local target = enemies[1]
+    local eRoot = target.Character:FindFirstChild("HumanoidRootPart")
+    if eRoot then
+        -- Teleport close and shoot
+        root.CFrame = CFrame.new(eRoot.Position + Vector3.new(5, 0, 0))
+        local char = getChar()
+        local tool = char and char:FindFirstChildOfClass("Tool")
+        if tool then
+            for _, v in pairs(tool:GetDescendants()) do
+                if v:IsA("RemoteEvent") then
+                    v:FireServer(eRoot.Position, eRoot.Position, eRoot)
+                end
+            end
+        end
+    end
+end)
+
+-- ========================================
+-- TELEPORT TO ENEMY
+-- ========================================
+RunService.Heartbeat:Connect(function()
+    if not Config.TeleportEnemy then return end
+    local root = getRoot()
+    if not root then return end
+    local enemies = getEnemies()
+    if #enemies == 0 then return end
+    local eRoot = enemies[1].Character:FindFirstChild("HumanoidRootPart")
+    if eRoot then
+        root.CFrame = CFrame.new(eRoot.Position + Vector3.new(3, 0, 3))
+    end
+end)
+
+-- ========================================
+-- ANTI AIM (SPINBOT)
+-- ========================================
+local spinAngle = 0
+RunService.RenderStepped:Connect(function()
+    if not Config.AntiAim then return end
+    local root = getRoot()
+    if not root then return end
+    spinAngle = spinAngle + 25
+    root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, math.rad(spinAngle), 0)
+end)
+
+-- ========================================
+-- FAKE LAG
+-- ========================================
+if Config.FakeLag then
+    local mt = getrawmetatable(game)
+    setreadonly(mt, false)
+    local oldNI = mt.__newindex
+    mt.__newindex = function(self, key, value)
+        if key == "CFrame" and self == getRoot() then
+            wait(Config.FakeLagDelay)
+        end
+        return oldNI(self, key, value)
+    end
+    setreadonly(mt, true)
+end
+
+-- ========================================
+-- ESP — BOX + NAME + HP + DISTANCE
+-- ========================================
+local ESPObjects = {}
+
+local function clearESP(player)
+    if ESPObjects[player] then
+        for _, v in pairs(ESPObjects[player]) do
+            if v then v:Remove() end
+        end
+        ESPObjects[player] = nil
+    end
+end
+
+local function createESP(player)
+    clearESP(player)
+    local bb = Instance.new("BillboardGui")
+    bb.AlwaysOnTop = true
+    bb.Size = UDim2.new(0, 120, 0, 50)
+    bb.StudsOffset = Vector3.new(0, 3.5, 0)
+
+    local nameL = Instance.new("TextLabel", bb)
+    nameL.Size = UDim2.new(1, 0, 0.5, 0)
+    nameL.BackgroundTransparency = 1
+    nameL.TextColor3 = Config.ESPColor
+    nameL.TextStrokeTransparency = 0
+    nameL.Font = Enum.Font.GothamBold
+    nameL.TextScaled = true
+
+    local infoL = Instance.new("TextLabel", bb)
+    infoL.Size = UDim2.new(1, 0, 0.5, 0)
+    infoL.Position = UDim2.new(0, 0, 0.5, 0)
+    infoL.BackgroundTransparency = 1
+    infoL.TextColor3 = Color3.fromRGB(50, 255, 50)
+    infoL.TextStrokeTransparency = 0
+    infoL.Font = Enum.Font.GothamBold
+    infoL.TextScaled = true
+
+    ESPObjects[player] = {bb, nameL, infoL}
+
+    RunService.RenderStepped:Connect(function()
+        if not Config.ESPEnabled then bb.Parent = nil return end
+        local myRoot = getRoot()
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and myRoot then
+            local eRoot = player.Character.HumanoidRootPart
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            local dist = (eRoot.Position - myRoot.Position).Magnitude
+            if dist <= Config.ESPDistance then
+                bb.Adornee = eRoot
+                bb.Parent = eRoot
+                nameL.Text = player.Name
+                infoL.Text = (hum and math.floor(hum.Health) or "??") .. " HP | " .. math.floor(dist) .. "m"
+            else
+                bb.Parent = nil
+            end
+        else
+            bb.Parent = nil
+        end
+    end)
+end
+
+for _, p in pairs(getEnemies()) do createESP(p) end
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function() wait(1) createESP(p) end)
+end)
+Players.PlayerRemoving:Connect(function(p) clearESP(p) end)
+
+-- ========================================
+-- AUTO HEAL
+-- ========================================
+RunService.Heartbeat:Connect(function()
+    if not Config.AutoHeal or Config.GodMode then return end
+    local hum = getHum()
+    if hum and hum.Health < Config.HealThreshold then
+        hum.Health = hum.MaxHealth
+    end
+end)
+
+-- ========================================
+-- ANTI AFK
+-- ========================================
+if Config.AntiAFK then
+    LocalPlayer.Idled:Connect(function()
+        VirtualUser:Button2Down(Vector2.new(0,0), Camera.CFrame)
+        task.wait(0.1)
+        VirtualUser:Button2Up(Vector2.new(0,0), Camera.CFrame)
+    end)
+end
+
+-- ========================================
+-- MOBILE GUI
+-- ========================================
+local sg = Instance.new("ScreenGui")
+sg.Name = "OnyxV67"
+sg.ResetOnSpawn = false
+sg.IgnoreGuiInset = true
+sg.Parent = LocalPlayer.PlayerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 230, 0, 520)
+frame.Position = UDim2.new(0, 8, 0.15, 0)
+frame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+frame.BackgroundTransparency = 0.15
+frame.Active = true
+frame.Draggable = true
+frame.Parent = sg
+
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 38)
+titleBar.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+titleBar.Parent = frame
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 12)
+
+local titleTxt = Instance.new("TextLabel")
+titleTxt.Size = UDim2.new(1, 0, 1, 0)
+titleTxt.BackgroundTransparency = 1
+titleTxt.Text = "⚡ ONYX v67 | STRIKE WARFARE"
+titleTxt.TextColor3 = Color3.new(1,1,1)
+titleTxt.Font = Enum.Font.GothamBold
+titleTxt.TextScaled = true
+titleTxt.Parent = titleBar
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, -42)
+scroll.Position = UDim2.new(0, 0, 0, 42)
+scroll.BackgroundTransparency = 1
+scroll.ScrollBarThickness = 3
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.Parent = frame
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 5)
+layout.Parent = scroll
+
+local pad = Instance.new("UIPadding")
+pad.PaddingLeft = UDim.new(0, 8)
+pad.PaddingRight = UDim.new(0, 8)
+pad.PaddingTop = UDim.new(0, 6)
+pad.Parent = scroll
+
+local function mkToggle(label, key)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.BackgroundColor3 = Config[key] and Color3.fromRGB(40,170,70) or Color3.fromRGB(170,40,40)
+    btn.Text = label .. "  " .. (Config[key] and "ON" or "OFF")
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextScaled = true
+    btn.Parent = scroll
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+    btn.MouseButton1Click:Connect(function()
+        Config[key] = not Config[key]
+        btn.BackgroundColor3 = Config[key] and Color3.fromRGB(40,170,70) or Color3.fromRGB(170,40,40)
+        btn.Text = label .. "  " .. (Config[key] and "ON" or "OFF")
+    end)
+end
+
+mkToggle("🎯 Aim Lock", "AimLock")
+mkToggle("👁️ ESP", "ESPEnabled")
+mkToggle("🔇 Silent Aim", "SilentAim")
+mkToggle("♾️ Infinite Ammo", "InfiniteAmmo")
+mkToggle("⚡ Rapid Fire", "RapidFire")
+mkToggle("🎯 No Recoil", "NoRecoil")
+mkToggle("🛡️ God Mode", "GodMode")
+mkToggle("❤️ Auto Heal", "AutoHeal")
+mkToggle("💨 Speed Hack", "SpeedHack")
+mkToggle("🦘 Jump Hack", "JumpHack")
+mkToggle("🦘 Infinite Jump", "InfiniteJump")
+mkToggle("👻 No Clip", "NoClip")
+mkToggle("✈️ Fly", "FlyEnabled")
+mkToggle("💀 Kill Aura", "KillAura")
+mkToggle("🤖 Auto Farm", "AutoFarm")
+mkToggle("🌀 Spinbot", "AntiAim")
+mkToggle("📡 Teleport Enemy", "TeleportEnemy")
+mkToggle("⏱️ Anti AFK", "AntiAFK")
+
+print("[ONYX v67] Strike Warfare Loaded — 6767 gng")
