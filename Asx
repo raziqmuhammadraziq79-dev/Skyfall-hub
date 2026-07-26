@@ -1,0 +1,228 @@
+-- Hanami Vortex | Sniper Edition & Precision Fix
+-- Engine: Input-Based Silent Aim (Zoom Compatible)
+-- Visual: Dynamic Bounding Box ESP
+-- Status: Ultra Stable for Delta Executor
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+-- ================= CONFIGURATION =================
+local Config = {
+    Enabled = true,
+    SilentAim = true,
+    AutoShoot = false, -- Tembak otomatis saat lock (opsional)
+    FOV = 300,
+    ColorEnemy = Color3.fromRGB(255, 40, 40),
+    ColorTeam = Color3.fromRGB(40, 200, 255),
+    Thickness = 2
+}
+
+-- ================= STORAGE =================
+local ESP_Cache = {}
+local CurrentTarget = nil
+local TargetPart = nil
+
+-- ================= UI PANEL (MINIMALIST) =================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = game.CoreGui
+
+local Panel = Instance.new("Frame")
+Panel.Size = UDim2.new(0, 180, 0, 160)
+Panel.Position = UDim2.new(0, 20, 0, 20)
+Panel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+Panel.BackgroundTransparency = 0.15
+Panel.BorderSizePixel = 0
+Panel.Parent = ScreenGui
+Instance.new("UICorner", Panel).CornerRadius = UDim.new(0, 8)
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.Text = "VORTEX SNIPER"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 16
+Title.BackgroundTransparency = 1
+Title.Parent = Panel
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(1, -16, 0, 40)
+ToggleBtn.Position = UDim2.new(0, 8, 0, 45)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+ToggleBtn.Text = "ACTIVE"
+ToggleBtn.TextColor3 = Color3.new(1,1,1)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Parent = Panel
+Instance.new("UICorner", ToggleBtn)
+
+local StatusTxt = Instance.new("TextLabel")
+StatusTxt.Size = UDim2.new(1, 0, 0, 20)
+StatusTxt.Position = UDim2.new(0, 0, 1, -20)
+StatusTxt.BackgroundTransparency = 1
+StatusTxt.Text = "System Ready"
+StatusTxt.TextColor3 = Color3.fromRGB(150, 150, 150)
+StatusTxt.TextSize = 11
+StatusTxt.Parent = Panel
+
+local IsActive = true
+ToggleBtn.MouseButton1Click:Connect(function()
+    IsActive = not IsActive
+    Config.Enabled = IsActive
+    Config.SilentAim = IsActive
+    ToggleBtn.Text = IsActive and "ACTIVE" or "PAUSED"
+    ToggleBtn.BackgroundColor3 = IsActive and Color3.fromRGB(0, 150, 255) or Color3.fromRGB(150, 0, 0)
+end)
+
+-- ================= PRECISION ESP ENGINE =================
+function CreateESP(Player)
+    if Player == LocalPlayer then return end
+    
+    local Box = Drawing.new("Square")
+    Box.Thickness = Config.Thickness
+    Box.Filled = false
+    
+    local Tracer = Drawing.new("Line")
+    Tracer.Thickness = 1.5
+    
+    ESP_Cache[Player] = { Box = Box, Tracer = Tracer }
+end
+
+function UpdateESP()
+    if not Config.Enabled then
+        for _, Data in pairs(ESP_Cache) do
+            Data.Box.Visible = false
+            Data.Tracer.Visible = false
+        end
+        return
+    end
+
+    for Player, Data in pairs(ESP_Cache) do
+        if Player.Character then
+            local Root = Player.Character:FindFirstChild("HumanoidRootPart")
+            local Head = Player.Character:FindFirstChild("Head")
+            
+            if Root and Head then
+                local Pos, OnScreen = Camera:WorldToViewportPoint(Root.Position)
+                local HeadPos, _ = Camera:WorldToViewportPoint(Head.Position)
+                
+                if OnScreen then
+                    -- Dynamic Height Calculation (Fix Berantakan)
+                    local Height = math.abs(HeadPos.Y - Pos.Y) * 2.2 
+                    local Width = Height * 0.6
+                    
+                    Data.Box.Size = Vector2.new(Width, Height)
+                    Data.Box.Position = Vector2.new(Pos.X - Width/2, HeadPos.Y - Height/2 + 10)
+                    
+                    local IsEnemy = not (LocalPlayer.Team and Player.Team and LocalPlayer.Team == Player.Team)
+                    local Color = IsEnemy and Config.ColorEnemy or Config.ColorTeam
+                    
+                    Data.Box.Color = Color
+                    Data.Tracer.Color = Color
+                    
+                    Data.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    Data.Tracer.To = Vector2.new(Pos.X, Pos.Y)
+                    
+                    Data.Box.Visible = true
+                    Data.Tracer.Visible = IsEnemy
+                else
+                    Data.Box.Visible = false
+                    Data.Tracer.Visible = false
+                end
+            end
+        end
+    end
+end
+
+-- ================= SILENT AIM (ZOOM COMPATIBLE) =================
+function GetBestTarget()
+    local Closest = nil
+    local MinDist = math.huge
+    
+    for _, Player in pairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer and Player.Character then
+            local Head = Player.Character:FindFirstChild("Head")
+            local Root = Player.Character:FindFirstChild("HumanoidRootPart")
+            
+            if Head and Root then
+                local Pos, OnScreen = Camera:WorldToViewportPoint(Root.Position)
+                local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+                local Dist2D = (Vector2.new(Pos.X, Pos.Y) - Center).Magnitude
+                
+                local IsEnemy = not (LocalPlayer.Team and Player.Team and LocalPlayer.Team == Player.Team)
+                
+                if Dist2D < Config.FOV and IsEnemy and OnScreen then
+                    local Dist3D = (Camera.CFrame.Position - Root.Position).Magnitude
+                    if Dist3D < MinDist then
+                        MinDist = Dist3D
+                        Closest = {Head = Head, Root = Root, Player = Player}
+                    end
+                end
+            end
+        end
+    end
+    return Closest
+end
+
+function ApplySilentAim()
+    if not Config.SilentAim or not IsActive then 
+        CurrentTarget = nil
+        return 
+    end
+    
+    local TargetData = GetBestTarget()
+    if TargetData then
+        CurrentTarget = TargetData.Player
+        TargetPart = TargetData.Head
+        StatusTxt.Text = "LOCKED: " .. CurrentTarget.Name
+        
+        -- Teknik Silent: Memanipulasi Mouse Position secara virtual
+        -- Ini membuat peluru menuju target TANPA menggerakkan kamera fisik
+        -- Sehingga Zoom Sniper TIDAK TERGANGGU
+        local ScreenPos, OnScreen = Camera:WorldToViewportPoint(TargetData.Head.Position)
+        if OnScreen then
+            local MousePos = Vector2.new(ScreenPos.X, ScreenPos.Y)
+            -- Simpan posisi mouse asli untuk dikembalikan jika perlu
+            -- Di Delta Executor, kita bisa langsung set mouse position
+            Mouse.X = ScreenPos.X
+            Mouse.Y = ScreenPos.Y
+            
+            -- Auto Shoot Logic (Jika diaktifkan)
+            if Config.AutoShoot then
+                fireclickdetector(game:GetService("VirtualUser"):CaptureController())
+                -- Atau gunakan event click jika game mendukung
+            end
+        end
+    else
+        CurrentTarget = nil
+        TargetPart = nil
+        StatusTxt.Text = "Scanning Area..."
+    end
+end
+
+-- ================= INITIALIZATION =================
+Players.PlayerAdded:Connect(function(P)
+    P.CharacterAdded:Connect(function() task.wait(0.3); CreateESP(P) end)
+    if P.Character then CreateESP(P) end
+end)
+
+Players.PlayerRemoving:Connect(function(P)
+    if ESP_Cache[P] then
+        for _, Obj in pairs(ESP_Cache[P]) do if Obj.Remove then Obj:Remove() end end
+        ESP_Cache[P] = nil
+    end
+end)
+
+for _, P in pairs(Players:GetPlayers()) do if P.Character then CreateESP(P) end end
+
+-- ================= MAIN LOOP =================
+RunService.RenderStepped:Connect(function()
+    Camera = workspace.CurrentCamera
+    UpdateESP()
+    ApplySilentAim()
+end)
+
+print("[Hanami] Vortex Sniper System Loaded. Zoom Compatible.")
