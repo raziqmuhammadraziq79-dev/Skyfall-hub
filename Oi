@@ -1,0 +1,42 @@
+local Players = game:GetService("Players")
+local ESP = {}
+
+function ESP:CreateESP(player)
+    local highlight = Instance.new("Highlight")
+    highlight.Parent = player.Character
+    highlight.FillColor = Color3.new(1, 0, 0) -- Warna merah untuk musuh
+    highlight.OutlineColor = Color3.new(0, 0, 0) -- Outline hitam
+end
+
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= Players.LocalPlayer then
+        ESP:CreateESP(player)
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        ESP:CreateESP(player)
+    end)
+end)
+
+-- GUI Toggle
+local ScreenGui = Instance.new("ScreenGui")
+local ToggleButton = Instance.new("TextButton")
+
+ToggleButton.Size = UDim2.new(0, 100, 0, 50)
+ToggleButton.Position = UDim2.new(0.5, -50, 0, 0)
+ToggleButton.Text = "Toggle ESP"
+ToggleButton.Parent = ScreenGui
+ScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+
+local espEnabled = true
+
+ToggleButton.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character and player.Character:FindFirstChild("Highlight") then
+            player.Character.Highlight.Enabled = espEnabled
+        end
+    end
+end)
