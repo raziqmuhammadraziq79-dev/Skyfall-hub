@@ -1,0 +1,174 @@
+-- ESP Tracer | Delta Executor Compatible
+-- Author: wleo | Hanami 凯奇
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+
+local LocalPlayer = Players.LocalPlayer
+local ESP = {}
+local Connections = {}
+
+-- Config
+local Config = {
+    Enabled = true,
+    TeamCheck = false,
+    MaxDistance = 1000,
+    TracerColor = Color3.fromRGB(255, 0, 0),
+    TracerThickness = 1.5,
+    TracerOrigin = "Bottom", -- "Bottom" or "Mouse"
+}
+
+-- Draw Lib
+local function newDrawing(type, props)
+    local obj = Drawing.new(type)
+    for k, v in pairs(props) do
+        obj[k] = v
+    end
+    return obj
+end
+
+-- Get Character Root
+local function getRoot(char)
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+-- Get Screen Position
+local function toScreen(pos)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen
+end
+
+-- Create ESP for player
+local function createESP(player)
+    if player == LocalPlayer then return end
+
+    local drawings = {
+        Tracer = newDrawing("Line", {
+            Visible = false,
+            Color = Config.TracerColor,
+            Thickness = Config.TracerThickness,
+            Transparency = 1,
+            ZIndex = 5,
+        }),
+        Name = newDrawing("Text", {
+            Visible = false,
+            Color = Color3.fromRGB(255, 255, 255),
+            Size = 14,
+            Center = true,
+            Outline = true,
+            OutlineColor = Color3.fromRGB(0, 0, 0),
+            ZIndex = 5,
+        }),
+        Distance = newDrawing("Text", {
+            Visible = false,
+            Color = Color3.fromRGB(200, 200, 200),
+            Size = 12,
+            Center = true,
+            Outline = true,
+            OutlineColor = Color3.fromRGB(0, 0, 0),
+            ZIndex = 5,
+        }),
+    }
+
+    ESP[player] = drawings
+
+    local conn = RunService.RenderStepped:Connect(function()
+        if not Config.Enabled then
+            for _, d in pairs(drawings) do d.Visible = false end
+            return
+        end
+
+        local char = player.Character
+        local root = getRoot(char)
+        local localChar = LocalPlayer.Character
+        local localRoot = getRoot(localChar)
+
+        if not root or not localRoot then
+            for _, d in pairs(drawings) do d.Visible = false end
+            return
+        end
+
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then
+            for _, d in pairs(drawings) do d.Visible = false end
+            return
+        end
+
+        -- Team Check
+        if Config.TeamCheck and player.Team == LocalPlayer.Team then
+            for _, d in pairs(drawings) do d.Visible = false end
+            return
+        end
+
+        local distance = (root.Position - localRoot.Position).Magnitude
+        if distance > Config.MaxDistance then
+            for _, d in pairs(drawings) do d.Visible = false end
+            return
+        end
+
+        local rootPos, onScreen = toScreen(root.Position)
+
+        if not onScreen then
+            for _, d in pairs(drawings) do d.Visible = false end
+            return
+        end
+
+        -- Tracer Origin
+        local originPos
+        if Config.TracerOrigin == "Bottom" then
+            originPos = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+        else
+            originPos = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        end
+
+        -- Tracer
+        drawings.Tracer.Visible = true
+        drawings.Tracer.From = originPos
+        drawings.Tracer.To = rootPos
+        drawings.Tracer.Color = Config.TracerColor
+
+        -- Name
+        drawings.Name.Visible = true
+        drawings.Name.Position = Vector2.new(rootPos.X, rootPos.Y - 20)
+        drawings.Name.Text = player.DisplayName
+
+        -- Distance
+        drawings.Distance.Visible = true
+        drawings.Distance.Position = Vector2.new(rootPos.X, rootPos.Y - 6)
+        drawings.Distance.Text = string.format("[%.0fm]", distance)
+    end)
+
+    table.insert(Connections, conn)
+end
+
+-- Remove ESP
+local function removeESP(player)
+    if ESP[player] then
+        for _, d in pairs(ESP[player]) do
+            d:Remove()
+        end
+        ESP[player] = nil
+    end
+end
+
+-- Init
+for _, player in ipairs(Players:GetPlayers()) do
+    createESP(player)
+end
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(1)
+        createESP(player)
+    end)
+    createESP(player)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    removeESP(player)
+end)
+
+-- Toggle (opsional)
+-- Config.Enabled = false  -- buat matiin
+-- Config.TeamCheck = true -- aktifin team check
