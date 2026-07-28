@@ -1,0 +1,113 @@
+-- Enemy Tracker ESP (Roblox Studio)
+-- Mobile friendly toggle system
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local ESPEnabled = false
+local PanelVisible = true
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "EnemyTrackerPanel"
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0,180,0,120)
+Frame.Position = UDim2.new(0.05,0,0.5,0)
+Frame.Parent = ScreenGui
+
+local Toggle = Instance.new("TextButton")
+Toggle.Size = UDim2.new(0,160,0,40)
+Toggle.Position = UDim2.new(0,10,0,10)
+Toggle.Text = "ESP: OFF"
+Toggle.Parent = Frame
+
+local Hide = Instance.new("TextButton")
+Hide.Size = UDim2.new(0,160,0,40)
+Hide.Position = UDim2.new(0,10,0,60)
+Hide.Text = "HIDE PANEL"
+Hide.Parent = Frame
+
+
+local function IsEnemy(player)
+	if player.Team == nil or LocalPlayer.Team == nil then
+		return true
+	end
+	
+	return player.Team ~= LocalPlayer.Team
+end
+
+
+local function AddESP(character)
+	if character:FindFirstChild("EnemyHighlight") then
+		return
+	end
+
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "EnemyHighlight"
+	highlight.Adornee = character
+	highlight.FillTransparency = 1
+	highlight.OutlineTransparency = 0
+	highlight.Parent = character
+end
+
+
+local function RemoveESP(character)
+	local esp = character:FindFirstChild("EnemyHighlight")
+	if esp then
+		esp:Destroy()
+	end
+end
+
+
+local function UpdateESP()
+	for _,player in pairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character then
+			
+			if ESPEnabled and IsEnemy(player) then
+				AddESP(player.Character)
+			else
+				RemoveESP(player.Character)
+			end
+			
+		end
+	end
+end
+
+
+Toggle.MouseButton1Click:Connect(function()
+	ESPEnabled = not ESPEnabled
+	
+	if ESPEnabled then
+		Toggle.Text = "ESP: ON"
+	else
+		Toggle.Text = "ESP: OFF"
+	end
+	
+	UpdateESP()
+end)
+
+
+Hide.MouseButton1Click:Connect(function()
+	PanelVisible = not PanelVisible
+	Frame.Visible = PanelVisible
+	
+	if PanelVisible then
+		Hide.Text = "HIDE PANEL"
+	else
+		Hide.Text = "SHOW PANEL"
+	end
+end)
+
+
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function()
+		task.wait(1)
+		UpdateESP()
+	end)
+end)
+
+
+while task.wait(1) do
+	UpdateESP()
+end
