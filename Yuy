@@ -1,0 +1,295 @@
+--// Enemy Trace ESP System - Roblox Studio
+--// All In One Debug/FPS System
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+local ESP_ENABLED = false
+local ESP_FOLDER = Instance.new("Folder")
+ESP_FOLDER.Name = "EnemyESPObjects"
+ESP_FOLDER.Parent = workspace
+
+
+local ESP_DATA = {}
+
+
+--========================
+-- CREATE ESP
+--========================
+
+local function RemoveESP(player)
+
+	if ESP_DATA[player] then
+		
+		if ESP_DATA[player].Highlight then
+			ESP_DATA[player].Highlight:Destroy()
+		end
+
+		if ESP_DATA[player].Billboard then
+			ESP_DATA[player].Billboard:Destroy()
+		end
+		
+		ESP_DATA[player] = nil
+	end
+
+end
+
+
+
+local function CreateESP(player)
+
+	if player == LocalPlayer then return end
+	if not player.Character then return end
+
+	if player.Team == LocalPlayer.Team then
+		return
+	end
+
+
+	RemoveESP(player)
+
+
+	local char = player.Character
+	local root = char:FindFirstChild("HumanoidRootPart")
+
+	if not root then return end
+
+
+	-- Highlight
+
+	local highlight = Instance.new("Highlight")
+
+	highlight.Name = "EnemyHighlight"
+	highlight.FillColor = Color3.fromRGB(255,0,0)
+	highlight.OutlineColor = Color3.fromRGB(255,255,255)
+
+	highlight.FillTransparency = 0.45
+	highlight.Enabled = ESP_ENABLED
+
+	highlight.Parent = char
+
+
+
+	-- Name Tag
+
+	local gui = Instance.new("BillboardGui")
+
+	gui.Name = "EnemyInfo"
+	gui.Size = UDim2.new(0,200,0,60)
+	gui.StudsOffset = Vector3.new(0,3,0)
+	gui.AlwaysOnTop = true
+	gui.Enabled = ESP_ENABLED
+	gui.Parent = root
+
+
+
+	local text = Instance.new("TextLabel")
+
+	text.Size = UDim2.new(1,0,1,0)
+	text.BackgroundTransparency = 1
+
+	text.TextColor3 = Color3.fromRGB(255,50,50)
+
+	text.TextStrokeTransparency = 0
+
+	text.TextScaled = true
+
+	text.Font = Enum.Font.GothamBold
+
+	text.Parent = gui
+
+
+
+	ESP_DATA[player] = {
+
+		Highlight = highlight,
+		Billboard = gui,
+		Text = text
+
+	}
+
+end
+
+
+
+--========================
+-- UPDATE
+--========================
+
+RunService.RenderStepped:Connect(function()
+
+	for player,data in pairs(ESP_DATA) do
+
+		if player.Character 
+		and player.Character:FindFirstChild("HumanoidRootPart") then
+
+
+			local distance = math.floor(
+				(LocalPlayer.Character.HumanoidRootPart.Position -
+				player.Character.HumanoidRootPart.Position).Magnitude
+			)
+
+
+			local humanoid = player.Character:FindFirstChild("Humanoid")
+
+			local hp = ""
+
+			if humanoid then
+				hp = " HP:"..math.floor(humanoid.Health)
+			end
+
+
+			data.Text.Text =
+				player.Name..
+				"\n["..distance.."m]"..
+				hp
+
+		end
+
+	end
+
+end)
+
+
+
+--========================
+-- SCAN PLAYER
+--========================
+
+local function Scan()
+
+	for _,player in pairs(Players:GetPlayers()) do
+
+		if player ~= LocalPlayer then
+			
+			CreateESP(player)
+
+		end
+
+	end
+
+end
+
+
+
+Players.PlayerAdded:Connect(function(player)
+
+	player.CharacterAdded:Connect(function()
+
+		task.wait(1)
+
+		Scan()
+
+	end)
+
+end)
+
+
+
+--========================
+-- GUI PANEL
+--========================
+
+local gui = Instance.new("ScreenGui")
+
+gui.Name = "EnemyTracePanel"
+
+gui.ResetOnSpawn = false
+
+gui.Parent = LocalPlayer.PlayerGui
+
+
+
+local frame = Instance.new("Frame")
+
+frame.Size = UDim2.new(0,180,0,100)
+
+frame.Position =
+	UDim2.new(0,20,0.5,-50)
+
+frame.BackgroundColor3 =
+	Color3.fromRGB(20,20,20)
+
+frame.Active = true
+frame.Draggable = true
+
+frame.Parent = gui
+
+
+
+local title = Instance.new("TextLabel")
+
+title.Size = UDim2.new(1,0,0,30)
+
+title.BackgroundTransparency = 1
+
+title.Text = "ENEMY TRACE"
+
+title.TextColor3 =
+	Color3.fromRGB(255,255,255)
+
+title.Font =
+	Enum.Font.GothamBold
+
+title.TextScaled = true
+
+title.Parent = frame
+
+
+
+local button = Instance.new("TextButton")
+
+button.Size =
+	UDim2.new(0.8,0,0,40)
+
+button.Position =
+	UDim2.new(0.1,0,0.45,0)
+
+
+button.Text = "ESP : OFF"
+
+button.BackgroundColor3 =
+	Color3.fromRGB(40,40,40)
+
+button.TextColor3 =
+	Color3.fromRGB(255,255,255)
+
+button.Parent = frame
+
+
+
+button.MouseButton1Click:Connect(function()
+
+	ESP_ENABLED = not ESP_ENABLED
+
+
+	button.Text =
+		ESP_ENABLED and
+		"ESP : ON"
+		or
+		"ESP : OFF"
+
+
+
+	for _,data in pairs(ESP_DATA) do
+
+		data.Highlight.Enabled = ESP_ENABLED
+
+		data.Billboard.Enabled = ESP_ENABLED
+
+	end
+
+
+	if ESP_ENABLED then
+		Scan()
+	end
+
+end)
+
+
+
+-- START
+
+Scan()
