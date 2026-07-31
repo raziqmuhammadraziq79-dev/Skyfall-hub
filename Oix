@@ -1,0 +1,186 @@
+-- V30 Enemy Tracker Pro
+-- Roblox Studio Own Game System
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+local Config = {
+	Enabled = false,
+	ShowDistance = true,
+	ShowHealth = true,
+	EnemyColor = Color3.fromRGB(255,0,0)
+}
+
+local Cache = {}
+
+
+local function IsEnemy(player)
+
+	if player == LocalPlayer then
+		return false
+	end
+
+	if LocalPlayer.Team and player.Team then
+		return LocalPlayer.Team ~= player.Team
+	end
+
+	return false
+end
+
+
+
+local function Clear(player)
+
+	if Cache[player] then
+
+		for _,obj in pairs(Cache[player]) do
+			if obj then
+				obj:Destroy()
+			end
+		end
+
+		Cache[player] = nil
+	end
+end
+
+
+
+local function CreateTracker(player)
+
+	if not player.Character then
+		return
+	end
+
+	Clear(player)
+
+
+	local char = player.Character
+
+
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "V30EnemyHighlight"
+	highlight.FillColor = Config.EnemyColor
+	highlight.OutlineColor = Color3.new(1,1,1)
+	highlight.FillTransparency = .45
+	highlight.Parent = char
+
+
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "V30Info"
+	billboard.Size = UDim2.new(0,200,0,80)
+	billboard.StudsOffset = Vector3.new(0,3,0)
+	billboard.AlwaysOnTop = true
+	billboard.Parent = char
+
+
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1,0,1,0)
+	label.BackgroundTransparency = 1
+	label.TextColor3 = Color3.new(1,0.2,0.2)
+	label.TextScaled = true
+	label.Parent = billboard
+
+
+	Cache[player] = {
+		highlight,
+		billboard,
+		label
+	}
+
+
+	RunService.RenderStepped:Connect(function()
+
+		if not Cache[player] then return end
+		if not char.Parent then return end
+
+
+		local root = char:FindFirstChild("HumanoidRootPart")
+		local hum = char:FindFirstChild("Humanoid")
+
+
+		local text = player.Name
+
+
+		if Config.ShowDistance and root and LocalPlayer.Character then
+
+			local myRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+			if myRoot then
+				local dist = math.floor(
+					(root.Position-myRoot.Position).Magnitude
+				)
+
+				text = text.." | "..dist.."m"
+			end
+		end
+
+
+		if Config.ShowHealth and hum then
+			text = text.." | HP "..math.floor(hum.Health)
+		end
+
+
+		label.Text = text
+
+	end)
+
+end
+
+
+
+local function Refresh()
+
+	for _,p in pairs(Players:GetPlayers()) do
+
+		if Config.Enabled and IsEnemy(p) then
+
+			CreateTracker(p)
+
+		else
+
+			Clear(p)
+
+		end
+
+	end
+end
+
+
+
+Players.PlayerAdded:Connect(function(p)
+
+	p.CharacterAdded:Connect(function()
+
+		task.wait(1)
+		Refresh()
+
+	end)
+
+end)
+
+
+
+Players.PlayerRemoving:Connect(function(p)
+
+	Clear(p)
+
+end)
+
+
+
+-- sambungkan ke tombol UI V30
+-- Config.Enabled = true/false
+
+_G.V30ToggleESP = function()
+
+	Config.Enabled = not Config.Enabled
+
+	Refresh()
+
+	return Config.Enabled
+
+end
