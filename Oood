@@ -1,0 +1,308 @@
+--// Enemy ESP Tracker FIX v2
+--// Roblox Studio Own Game
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LP = Players.LocalPlayer
+
+local ESP_ON = false
+local ESP_CACHE = {}
+
+
+--========================
+-- CREATE UI
+--========================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ESP_Control"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LP:WaitForChild("PlayerGui")
+
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0,180,0,90)
+Frame.Position = UDim2.new(0,20,0.5,-45)
+Frame.BackgroundColor3 = Color3.fromRGB(25,25,25)
+Frame.Active = true
+Frame.Draggable = true
+Frame.Parent = ScreenGui
+
+
+local Button = Instance.new("TextButton")
+Button.Size = UDim2.new(0.8,0,0,40)
+Button.Position = UDim2.new(0.1,0,0.35,0)
+Button.Text = "ESP : OFF"
+Button.BackgroundColor3 = Color3.fromRGB(50,50,50)
+Button.TextColor3 = Color3.new(1,1,1)
+Button.Parent = Frame
+
+
+
+--========================
+-- REMOVE ESP
+--========================
+
+local function RemoveESP(player)
+
+	local data = ESP_CACHE[player]
+
+	if data then
+
+		if data.Highlight then
+			data.Highlight:Destroy()
+		end
+
+		if data.Tag then
+			data.Tag:Destroy()
+		end
+
+	end
+
+	ESP_CACHE[player] = nil
+
+end
+
+
+
+--========================
+-- CREATE ESP
+--========================
+
+local function CreateESP(player)
+
+	if player == LP then
+		return
+	end
+
+
+	local char = player.Character
+
+	if not char then
+		return
+	end
+
+
+	local root = char:FindFirstChild("HumanoidRootPart")
+
+	if not root then
+		return
+	end
+
+
+	RemoveESP(player)
+
+
+	print("ESP FOUND:",player.Name)
+
+
+
+	local highlight = Instance.new("Highlight")
+
+	highlight.Name = "EnemyESP"
+
+	highlight.FillColor = Color3.fromRGB(255,0,0)
+
+	highlight.OutlineColor =
+		Color3.fromRGB(255,255,255)
+
+	highlight.FillTransparency = 0.4
+
+	highlight.Enabled = ESP_ON
+
+	highlight.Parent = char
+
+
+
+	local tag = Instance.new("BillboardGui")
+
+	tag.Size = UDim2.new(0,200,0,50)
+
+	tag.StudsOffset =
+		Vector3.new(0,3,0)
+
+	tag.AlwaysOnTop = true
+
+	tag.Enabled = ESP_ON
+
+	tag.Parent = root
+
+
+
+	local text = Instance.new("TextLabel")
+
+	text.Size = UDim2.new(1,0,1,0)
+
+	text.BackgroundTransparency = 1
+
+	text.TextColor3 =
+		Color3.fromRGB(255,50,50)
+
+	text.TextStrokeTransparency = 0
+
+	text.TextScaled = true
+
+	text.Font =
+		Enum.Font.GothamBold
+
+	text.Parent = tag
+
+
+
+	ESP_CACHE[player] = {
+
+		Highlight = highlight,
+
+		Tag = tag,
+
+		Text = text
+
+	}
+
+end
+
+
+
+--========================
+-- SCAN ALL PLAYER
+--========================
+
+local function ScanPlayers()
+
+	for _,player in pairs(Players:GetPlayers()) do
+
+		if player ~= LP then
+
+			CreateESP(player)
+
+		end
+
+	end
+
+end
+
+
+
+--========================
+-- UPDATE DISTANCE
+--========================
+
+RunService.RenderStepped:Connect(function()
+
+	if not LP.Character then
+		return
+	end
+
+	local myRoot =
+		LP.Character:FindFirstChild("HumanoidRootPart")
+
+	if not myRoot then
+		return
+	end
+
+
+
+	for player,data in pairs(ESP_CACHE) do
+
+		if player.Character then
+
+			local root =
+				player.Character:FindFirstChild("HumanoidRootPart")
+
+			if root then
+
+				local dist =
+					math.floor(
+						(root.Position-myRoot.Position).Magnitude
+					)
+
+
+				data.Text.Text =
+					player.Name..
+					"\n"..dist.." studs"
+
+			end
+		end
+	end
+
+end)
+
+
+
+--========================
+-- PLAYER EVENTS
+--========================
+
+Players.PlayerAdded:Connect(function(player)
+
+	player.CharacterAdded:Connect(function()
+
+		task.wait(1)
+
+		if ESP_ON then
+			CreateESP(player)
+		end
+
+	end)
+
+end)
+
+
+Players.PlayerRemoving:Connect(function(player)
+
+	RemoveESP(player)
+
+end)
+
+
+
+--========================
+-- BUTTON
+--========================
+
+Button.MouseButton1Click:Connect(function()
+
+	ESP_ON = not ESP_ON
+
+
+	Button.Text =
+		ESP_ON and
+		"ESP : ON"
+		or
+		"ESP : OFF"
+
+
+
+	if ESP_ON then
+
+		ScanPlayers()
+
+	else
+
+		for player,_ in pairs(ESP_CACHE) do
+
+			RemoveESP(player)
+
+		end
+
+	end
+
+end)
+
+
+
+-- AUTO CHECK
+
+task.spawn(function()
+
+	while task.wait(3) do
+
+		if ESP_ON then
+
+			ScanPlayers()
+
+		end
+
+	end
+
+end)
