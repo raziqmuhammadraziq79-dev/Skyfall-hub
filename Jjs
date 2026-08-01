@@ -1,0 +1,409 @@
+-- ========================================================
+-- STRIKE WARFARE — FINAL FIX v5.0
+-- NO RELOAD | NO COOLDOWN | INSTANT SPAWN | GOD MODE
+-- ========================================================
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local INF = math.huge
+local ZERO = 0
+
+-- ========================================================
+-- UTILITY
+-- ========================================================
+
+local lockedValues = {} -- track semua value yang udah di-lock
+
+local function lockValue(v, target)
+    if lockedValues[v] then return end
+    lockedValues[v] = true
+    v.Value = target
+    v.Changed:Connect(function()
+        if v.Value ~= target then
+            task.defer(function()
+                v.Value = target
+            end)
+        end
+    end)
+end
+
+local function safeRequire(mod)
+    local ok, data = pcall(require, mod)
+    if ok and type(data) == "table" then return data end
+    return nil
+end
+
+-- ========================================================
+-- SECTION 1: GOD MODE
+-- ========================================================
+
+local function applyGod(char)
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    if not hum then return end
+    hum.MaxHealth = INF
+    hum.Health = INF
+    hum.WalkSpeed = 32
+    hum.JumpPower = 80
+    hum.HealthChanged:Connect(function(hp)
+        if hp < 50 then
+            task.defer(function() hum.Health = INF end)
+        end
+    end)
+end
+
+applyGod(character)
+player.CharacterAdded:Connect(function(c)
+    character = c
+    task.wait(0.1)
+    applyGod(c)
+end)
+
+-- ========================================================
+-- SECTION 2: NUKE SEMUA VALUE (COOLDOWN + AMMO + RELOAD)
+-- ========================================================
+
+local AMMO_KEYS = {
+    "ammo","bullet","mag","clip","round","reserve",
+    "shell","charge","magazine","capacity","count",
+    "rockets","missiles","guns","turret","bomb"
+}
+
+local COOLDOWN_KEYS = {
+    "cooldown","reload","delay","wait","timer",
+    "spawn","respawn","restock","duration","interval",
+    "rate","time","countdown","recharge","lockout"
+}
+
+local BOOL_RELOAD_KEYS = {
+    "reload","empty","outof","jammed","reloading",
+    "nocammo","noammo","canfire","isreloading"
+}
+
+local function isAmmoKey(n)
+    for _, k in ipairs(AMMO_KEYS) do
+        if string.find(n, k) then return true end
+    end
+    return false
+end
+
+local function isCooldownKey(n)
+    for _, k in ipairs(COOLDOWN_KEYS) do
+        if string.find(n, k) then return true end
+    end
+    return false
+end
+
+local function isBoolReloadKey(n)
+    for _, k in ipairs(BOOL_RELOAD_KEYS) do
+        if string.find(n, k) then return true end
+    end
+    return false
+end
+
+local function nukeValues(parent)
+    for _, v in ipairs(parent:GetDescendants()) do
+        if v:IsA("NumberValue") or v:IsA("IntValue") then
+            local n = v.Name:lower()
+            if isAmmoKey(n) then lockValue(v, INF)
+            elseif isCooldownKey(n) then lockValue(v, ZERO)
+            end
+
+        elseif v:IsA("BoolValue") then
+            local n = v.Name:lower()
+            if isBoolReloadKey(n) then
+                -- reloading = false (biar ga trigger animasi reload)
+                -- canfire = true
+                if string.find(n, "canfire") or string.find(n, "shoot") then
+                    lockValue(v, true)
+                else
+                    lockValue(v, false)
+                end
+            end
+
+        elseif v:IsA("ModuleScript") then
+            local data = safeRequire(v)
+            if data then
+                -- Damage
+                local dmgKeys = {"Damage","BodyDamage","HeadDamage",
+                    "HeadshotMultiplier","ExplosionDamage","SplashDamage",
+                    "GunDamage","RocketDamage","MissileDamage","TurretDamage"}
+                for _, k in ipairs(dmgKeys) do data[k] = 99999 end
+
+                -- Ammo
+                local ammoKeys = {"MagSize","MaxAmmo","Ammo","ReserveAmmo",
+                    "ClipSize","MaxClip","StoredAmmo","TotalAmmo","VehicleAmmo",
+                    "MaxVehicleAmmo","RocketAmmo","MissileAmmo","GunAmmo",
+                    "TurretAmmo","BombAmmo","Rockets","Missiles"}
+                for _, k in ipairs(ammoKeys) do data[k] = INF end
+
+                -- Zero timers
+                local zeroKeys = {"ReloadTime","FireRate","RateOfFire",
+                    "Cooldown","FireDelay","SpawnCooldown","WeaponCooldown",
+                    "DrawTime","EquipTime","SwapTime","RocketCooldown",
+                    "MissileCooldown","GunCooldown","TurretCooldown",
+                    "RespawnTime","DespawnTime","ReloadDuration","ChargeCooldown",
+                    "AbilityCooldown","ReloadSpeed","ReloadRate"}
+                for _, k in ipairs(zeroKeys) do data[k] = ZERO end
+
+                -- Accuracy
+                local accKeys = {"Spread","MaxSpread","Bloom","BloomPerShot",
+                    "RecoilX","RecoilY","KickForce","ClimbPerShot",
+                    "ShakeMagnitude","MaxClimb","SpreadPerShot"}
+                for _, k in ipairs(accKeys) do data[k] = ZERO end
+
+                -- Range
+                data.Range = INF
+                data.BulletSpeed = INF
+                data.MuzzleVelocity = INF
+                data.BulletDrop = ZERO
+                data.Gravity = ZERO
+
+                -- Vehicle
+                data.Health = INF
+                data.MaxHealth = INF
+                data.Armor = INF
+                data.FuelCapacity = INF
+                data.Fuel = INF
+                data.FuelConsumption = ZERO
+                data.Speed = 200
+                data.MaxSpeed = 200
+            end
+        end
+    end
+end
+
+-- ========================================================
+-- SECTION 3: INTERCEPT RELOAD ANIMATION + FORCE SKIP
+-- Tank reload biasanya pakai AnimationTrack atau ticker
+-- ========================================================
+
+local function killReloadAnimations(char)
+    for _, v in ipairs(char:GetDescendants()) do
+        if v:IsA("AnimationTrack") then
+            local n = v.Name:lower()
+            if string.find(n, "reload") then
+                v:Stop(0)
+            end
+        end
+    end
+end
+
+-- ========================================================
+-- SECTION 4: FORCE SKIP COOLDOWN UI
+-- Skip nilai timestamp cooldown yang disimpen di player
+-- ========================================================
+
+local function nukePlayerCooldowns()
+    -- leaderstats
+    local ls = player:FindFirstChild("leaderstats")
+    if ls then nukeValues(ls) end
+
+    -- PlayerData / PlayerStats
+    for _, folder in ipairs({"PlayerData","PlayerStats","Data",
+        "Stats","Vehicles","VehicleData","Spawns","SpawnData"}) do
+        local f = player:FindFirstChild(folder)
+        if f then nukeValues(f) end
+    end
+
+    -- Langsung scan player
+    nukeValues(player)
+end
+
+nukePlayerCooldowns()
+
+-- ========================================================
+-- SECTION 5: WEAPON + BACKPACK FIX
+-- ========================================================
+
+local function fixWeapon(tool)
+    if not tool then return end
+    nukeValues(tool)
+end
+
+local function fixAllWeapons()
+    for _, t in ipairs(character:GetChildren()) do
+        if t:IsA("Tool") then fixWeapon(t) end
+    end
+    local bp = player:FindFirstChild("Backpack")
+    if bp then
+        for _, t in ipairs(bp:GetChildren()) do
+            fixWeapon(t)
+        end
+    end
+end
+
+fixAllWeapons()
+
+character.ChildAdded:Connect(function(c)
+    if c:IsA("Tool") then
+        task.wait(0.05)
+        fixWeapon(c)
+    end
+end)
+
+local bp = player:WaitForChild("Backpack")
+bp.ChildAdded:Connect(function(c)
+    task.wait(0.05)
+    fixWeapon(c)
+end)
+
+-- ========================================================
+-- SECTION 6: VEHICLE FIX (TANK + HELI + ALL)
+-- ========================================================
+
+local function fixVehicle(model)
+    if not model or not model:IsA("Model") then return end
+    nukeValues(model)
+
+    local hum = model:FindFirstChildWhichIsA("Humanoid")
+    if hum then
+        hum.MaxHealth = INF
+        hum.Health = INF
+        hum.HealthChanged:Connect(function(hp)
+            if hp < 100 then
+                task.defer(function() hum.Health = INF end)
+            end
+        end)
+    end
+end
+
+for _, obj in ipairs(Workspace:GetChildren()) do
+    fixVehicle(obj)
+end
+
+Workspace.ChildAdded:Connect(function(obj)
+    task.wait(0.1)
+    fixVehicle(obj)
+    -- Fix module scan juga waktu vehicle baru spawn
+    nukeValues(obj)
+end)
+
+-- ========================================================
+-- SECTION 7: REPLICATED STORAGE SCAN
+-- ========================================================
+
+nukeValues(ReplicatedStorage)
+
+ReplicatedStorage.DescendantAdded:Connect(function(obj)
+    if obj:IsA("ModuleScript") then
+        task.wait(0.1)
+        local data = safeRequire(obj)
+        if data then
+            data.ReloadTime = ZERO
+            data.Cooldown = ZERO
+            data.SpawnCooldown = ZERO
+            data.MagSize = INF
+            data.Ammo = INF
+            data.MaxAmmo = INF
+        end
+    end
+end)
+
+-- ========================================================
+-- SECTION 8: HEARTBEAT — CONTINUOUS ENFORCEMENT
+-- ========================================================
+
+local tick_counter = 0
+
+RunService.Heartbeat:Connect(function()
+    tick_counter = tick_counter + 1
+
+    -- Tiap frame: tool ammo + cooldown
+    local tool = character:FindFirstChildWhichIsA("Tool")
+    if tool then
+        for _, v in ipairs(tool:GetDescendants()) do
+            if v:IsA("NumberValue") or v:IsA("IntValue") then
+                local n = v.Name:lower()
+                if isAmmoKey(n) and v.Value < 999 then v.Value = INF end
+                if isCooldownKey(n) and v.Value > 0 then v.Value = ZERO end
+            elseif v:IsA("BoolValue") then
+                local n = v.Name:lower()
+                if string.find(n, "reload") and v.Value == true then
+                    v.Value = false
+                end
+            end
+        end
+    end
+
+    -- Tiap 30 frame: vehicle sync
+    if tick_counter % 30 == 0 then
+        for _, obj in ipairs(Workspace:GetChildren()) do
+            if obj:IsA("Model") then
+                for _, v in ipairs(obj:GetDescendants()) do
+                    if v:IsA("NumberValue") or v:IsA("IntValue") then
+                        local n = v.Name:lower()
+                        if isAmmoKey(n) and v.Value < 999 then v.Value = INF end
+                        if isCooldownKey(n) and v.Value > 0 then v.Value = ZERO end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Tiap 60 frame: player cooldown nuke
+    if tick_counter % 60 == 0 then
+        nukePlayerCooldowns()
+        killReloadAnimations(character)
+    end
+
+    -- Tiap 120 frame: full weapon rescan
+    if tick_counter % 120 == 0 then
+        fixAllWeapons()
+    end
+end)
+
+-- ========================================================
+-- SECTION 9: KEYBINDS
+-- ========================================================
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+
+    -- F = Force fix semua
+    if input.KeyCode == Enum.KeyCode.F then
+        lockedValues = {}
+        fixAllWeapons()
+        nukePlayerCooldowns()
+        nukeValues(ReplicatedStorage)
+        for _, obj in ipairs(Workspace:GetChildren()) do fixVehicle(obj) end
+        killReloadAnimations(character)
+        print("✅ FORCE RE-APPLY SELESAI")
+    end
+
+    -- R = God mode re-apply
+    if input.KeyCode == Enum.KeyCode.R then
+        applyGod(character)
+        print("✅ God mode re-applied")
+    end
+
+    -- T = Kill semua animasi reload sekarang
+    if input.KeyCode == Enum.KeyCode.T then
+        killReloadAnimations(character)
+        print("✅ Reload animations killed")
+    end
+end)
+
+-- ========================================================
+-- BOOT
+-- ========================================================
+
+print("╔══════════════════════════════════════════╗")
+print("║   STRIKE WARFARE — FINAL FIX v5.0       ║")
+print("╠══════════════════════════════════════════╣")
+print("║  ❤️  God Mode + Anti Death Loop          ║")
+print("║  ♾️  Infinite Ammo (Weapon + Tank + Heli)║")
+print("║  ⏱️  No Cooldown (Spawn + Reload + Fire) ║")
+print("║  🔫  No Reload Animation                 ║")
+print("║  🚁  Vehicle: INF HP + INF Ammo          ║")
+print("║  🔄  Heartbeat sync tiap frame           ║")
+print("╠══════════════════════════════════════════╣")
+print("║  F = Force re-apply semua                ║")
+print("║  R = Re-apply God Mode                   ║")
+print("║  T = Kill reload animation sekarang      ║")
+print("╚══════════════════════════════════════════╝")
