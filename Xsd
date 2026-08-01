@@ -1,0 +1,407 @@
+-- ========================================================
+-- STRIKE WARFARE — GOD MODE ULTIMATE v2.0
+-- ALL IN ONE | INFINITE EVERYTHING | ZERO LIMITS
+-- ========================================================
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+-- ========================================================
+-- CORE CONFIG
+-- ========================================================
+
+local INF = math.huge
+local ZERO = 0
+local GOD_DAMAGE = 999999999
+local GOD_HEALTH = math.huge
+local GOD_SPEED = math.huge
+local GOD_AMMO = math.huge
+
+-- ========================================================
+-- SECTION 1: PLAYER GOD MODE
+-- ========================================================
+
+humanoid.MaxHealth = GOD_HEALTH
+humanoid.Health = GOD_HEALTH
+humanoid.WalkSpeed = 100
+humanoid.JumpPower = 200
+humanoid.AutoRotate = true
+
+-- Anti death loop
+humanoid.HealthChanged:Connect(function(health)
+    if health < 1 then
+        humanoid.Health = GOD_HEALTH
+    end
+end)
+
+-- Respawn instantly with god mode
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = newChar:WaitForChild("Humanoid")
+    humanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
+    humanoid.MaxHealth = GOD_HEALTH
+    humanoid.Health = GOD_HEALTH
+    humanoid.WalkSpeed = 100
+    humanoid.JumpPower = 200
+    humanoid.HealthChanged:Connect(function(hp)
+        if hp < 1 then humanoid.Health = GOD_HEALTH end
+    end)
+    print("✅ Respawned — God Mode reapplied")
+end)
+
+-- ========================================================
+-- SECTION 2: DEEP SCAN + OVERRIDE ALL MODULES
+-- ========================================================
+
+local function overrideWeaponData(data)
+    if type(data) ~= "table" then return end
+    
+    -- Core damage
+    local damageKeys = {
+        "Damage","BodyDamage","HeadDamage","LimbDamage",
+        "HeadshotMultiplier","DamageMultiplier","ExplosionDamage",
+        "RocketDamage","MissileDamage","GunDamage","TurretDamage",
+        "VehicleDamage","SplashDamage","BurnDamage","ToxicDamage"
+    }
+    for _, k in ipairs(damageKeys) do
+        if data[k] ~= nil then data[k] = GOD_DAMAGE end
+        data[k] = GOD_DAMAGE
+    end
+    
+    -- Infinite ammo
+    local ammoKeys = {
+        "MagSize","MaxAmmo","Ammo","ReserveAmmo","TotalAmmo",
+        "VehicleAmmo","MaxVehicleAmmo","RocketAmmo","MissileAmmo",
+        "GrenadeAmmo","TurretAmmo","BombAmmo","TankAmmo","HeliAmmo",
+        "PrimaryAmmo","SecondaryAmmo","StoredAmmo","ClipSize","MaxClip"
+    }
+    for _, k in ipairs(ammoKeys) do
+        data[k] = GOD_AMMO
+    end
+    
+    -- Zero timers
+    local zeroKeys = {
+        "ReloadTime","ReloadDuration","FireRate","RateOfFire","FireDelay",
+        "Cooldown","WeaponCooldown","SpawnCooldown","RespawnTime","DespawnTime",
+        "RocketCooldown","MissileCooldown","GunCooldown","TurretCooldown",
+        "SwapTime","DrawTime","HolsterTime","AimTime","EquipTime",
+        "ChargeCooldown","AbilityCooldown","ThrowCooldown","MeleeCooldown"
+    }
+    for _, k in ipairs(zeroKeys) do
+        data[k] = ZERO
+    end
+    
+    -- Perfect accuracy
+    local accuracyKeys = {
+        "Spread","MaxSpread","SpreadPerShot","MinSpread",
+        "Bloom","BloomPerShot","MaxBloom","BloomRecovery",
+        "RecoilX","RecoilY","RecoilZ","KickForce",
+        "ClimbPerShot","MaxClimb","ShakeMagnitude","ShakeRoughness",
+        "ViewmodelRecoil","CameraRecoil","HipSpread","AimSpread",
+        "MovementSpread","JumpSpread","CrouchSpread"
+    }
+    for _, k in ipairs(accuracyKeys) do
+        data[k] = ZERO
+    end
+    
+    -- Infinite range + instant bullet
+    local rangeKeys = {
+        "Range","MaxRange","BulletSpeed","MuzzleVelocity",
+        "ProjectileSpeed","BulletDrop","Gravity","BulletLifetime",
+        "MissileSpeed","RocketSpeed","TrajectorySpeed"
+    }
+    for _, k in ipairs(rangeKeys) do
+        if k == "BulletDrop" or k == "Gravity" then
+            data[k] = ZERO
+        else
+            data[k] = GOD_AMMO
+        end
+    end
+    
+    -- Vehicle stats
+    local vehicleKeys = {
+        "Health","MaxHealth","Armor","ShieldHealth","MaxShieldHealth",
+        "Speed","MaxSpeed","Acceleration","TurningSpeed","BoostSpeed",
+        "FuelCapacity","Fuel","FuelConsumption","FuelRegen",
+        "RepairRate","ShieldRegen"
+    }
+    for _, k in ipairs(vehicleKeys) do
+        if k == "FuelConsumption" then
+            data[k] = ZERO
+        else
+            data[k] = GOD_HEALTH
+        end
+    end
+end
+
+-- ========================================================
+-- SECTION 3: MASS MODULE SCANNER (FULL GAME SCAN)
+-- ========================================================
+
+local scannedModules = {}
+
+local function scanAndOverride(root)
+    if not root then return end
+    for _, obj in ipairs(root:GetDescendants()) do
+        if obj:IsA("ModuleScript") and not scannedModules[obj] then
+            local success, data = pcall(function() return require(obj) end)
+            if success and type(data) == "table" then
+                overrideWeaponData(data)
+                scannedModules[obj] = true
+            end
+        end
+    end
+end
+
+-- Scan all possible locations
+scanAndOverride(ReplicatedStorage)
+scanAndOverride(Workspace)
+scanAndOverride(game:GetService("ServerStorage"))
+
+print("✅ Deep scan complete — all modules overridden")
+
+-- ========================================================
+-- SECTION 4: VEHICLE RUNTIME OVERRIDE
+-- ========================================================
+
+local function overrideVehicle(vehicle)
+    -- Humanoid
+    local hum = vehicle:FindFirstChild("Humanoid")
+    if hum then
+        hum.MaxHealth = GOD_HEALTH
+        hum.Health = GOD_HEALTH
+    end
+    
+    -- All value types inside vehicle
+    for _, obj in ipairs(vehicle:GetDescendants()) do
+        if obj:IsA("NumberValue") or obj:IsA("IntValue") then
+            local name = obj.Name:lower()
+            if string.find(name, "ammo") or string.find(name, "fuel") or 
+               string.find(name, "health") or string.find(name, "armor") then
+                obj.Value = GOD_AMMO
+            elseif string.find(name, "cooldown") or string.find(name, "reload") or
+                   string.find(name, "wait") or string.find(name, "delay") or
+                   string.find(name, "timer") then
+                obj.Value = ZERO
+            end
+        end
+        
+        -- BasePart anchored protection
+        if obj:IsA("BasePart") then
+            obj.CanCollide = true
+        end
+    end
+end
+
+-- ========================================================
+-- SECTION 5: HELICOPTER GOD SPAWN
+-- ========================================================
+
+local spawnedVehicles = {}
+
+local function spawnGodHelicopter()
+    local templates = {
+        ReplicatedStorage:FindFirstChild("Helicopter"),
+        ReplicatedStorage:FindFirstChild("Heli"),
+        Workspace:FindFirstChild("Helicopter"),
+        Workspace:FindFirstChild("Heli"),
+    }
+    
+    local template = nil
+    for _, t in ipairs(templates) do
+        if t then template = t break end
+    end
+    
+    if not template then
+        -- Fallback: scan for any helicopter model
+        for _, obj in ipairs(ReplicatedStorage:GetChildren()) do
+            if obj:IsA("Model") and (
+                string.find(obj.Name:lower(), "heli") or 
+                string.find(obj.Name:lower(), "chopper") or
+                string.find(obj.Name:lower(), "aircraft")
+            ) then
+                template = obj
+                break
+            end
+        end
+    end
+    
+    if template then
+        local heli = template:Clone()
+        heli.Parent = Workspace
+        
+        local spawnPos = humanoidRootPart.Position + Vector3.new(0, 60, 0)
+        heli:MoveTo(spawnPos)
+        
+        overrideVehicle(heli)
+        table.insert(spawnedVehicles, heli)
+        
+        print("✅ God Helicopter spawned at Y+" .. tostring(spawnPos.Y))
+        return heli
+    else
+        warn("❌ Helicopter template not found in ReplicatedStorage or Workspace")
+    end
+end
+
+-- ========================================================
+-- SECTION 6: ALL VEHICLE GOD SPAWN
+-- ========================================================
+
+local vehicleNames = {
+    "Tank", "Jeep", "Truck", "Jet", "Plane",
+    "APC", "Boat", "UAV", "Drone", "Car",
+    "Motorcycle", "Humvee", "Helicopter", "Heli"
+}
+
+local function spawnAllVehicles()
+    for _, name in ipairs(vehicleNames) do
+        local template = ReplicatedStorage:FindFirstChild(name)
+                      or Workspace:FindFirstChild(name)
+        if template and template:IsA("Model") then
+            local v = template:Clone()
+            v.Parent = Workspace
+            v:MoveTo(humanoidRootPart.Position + Vector3.new(
+                math.random(-20, 20), 5, math.random(-20, 20)
+            ))
+            overrideVehicle(v)
+            table.insert(spawnedVehicles, v)
+            print("✅ Spawned: " .. name)
+        end
+    end
+end
+
+-- ========================================================
+-- SECTION 7: CONTINUOUS GOD SYNC (HEARTBEAT)
+-- ========================================================
+
+RunService.Heartbeat:Connect(function()
+    -- Player stats
+    if humanoid and humanoid.Parent then
+        if humanoid.Health < GOD_HEALTH then
+            humanoid.Health = GOD_HEALTH
+        end
+    end
+    
+    -- All workspace vehicles sync
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") then
+            local hum = obj:FindFirstChild("Humanoid")
+            if hum then
+                hum.Health = GOD_HEALTH
+                hum.MaxHealth = GOD_HEALTH
+            end
+            
+            for _, val in ipairs(obj:GetDescendants()) do
+                if val:IsA("NumberValue") or val:IsA("IntValue") then
+                    local n = val.Name:lower()
+                    if string.find(n, "ammo") then val.Value = GOD_AMMO end
+                    if string.find(n, "fuel") then val.Value = GOD_AMMO end
+                    if string.find(n, "cooldown") then val.Value = ZERO end
+                    if string.find(n, "reload") then val.Value = ZERO end
+                end
+            end
+        end
+    end
+    
+    -- Player equipped weapon ammo sync
+    local tool = character:FindFirstChildWhichIsA("Tool")
+    if tool then
+        local ammo = tool:FindFirstChild("Ammo") or tool:FindFirstChild("AmmoValue")
+        if ammo then ammo.Value = GOD_AMMO end
+    end
+end)
+
+-- ========================================================
+-- SECTION 8: NEW MODULE WATCHER (SCAN ON JOIN)
+-- ========================================================
+
+ReplicatedStorage.DescendantAdded:Connect(function(obj)
+    if obj:IsA("ModuleScript") and not scannedModules[obj] then
+        task.wait(0.1)
+        local success, data = pcall(function() return require(obj) end)
+        if success and type(data) == "table" then
+            overrideWeaponData(data)
+            scannedModules[obj] = true
+        end
+    end
+end)
+
+Workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("Model") then
+        task.wait(0.05)
+        overrideVehicle(obj)
+    end
+end)
+
+-- ========================================================
+-- SECTION 9: KEYBINDS
+-- ========================================================
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    
+    -- H = Spawn God Helicopter
+    if input.KeyCode == Enum.KeyCode.H then
+        spawnGodHelicopter()
+    end
+    
+    -- J = Spawn ALL Vehicles
+    if input.KeyCode == Enum.KeyCode.J then
+        spawnAllVehicles()
+    end
+    
+    -- G = Refill everything to god
+    if input.KeyCode == Enum.KeyCode.G then
+        humanoid.Health = GOD_HEALTH
+        for _, v in ipairs(spawnedVehicles) do
+            if v and v.Parent then overrideVehicle(v) end
+        end
+        print("✅ All stats refilled to GOD tier")
+    end
+    
+    -- K = Nuke all spawned vehicles + respawn fresh
+    if input.KeyCode == Enum.KeyCode.K then
+        for _, v in ipairs(spawnedVehicles) do
+            if v and v.Parent then v:Destroy() end
+        end
+        spawnedVehicles = {}
+        spawnGodHelicopter()
+        print("✅ Vehicles nuked + fresh helicopter spawned")
+    end
+    
+    -- L = Rescan all modules again
+    if input.KeyCode == Enum.KeyCode.L then
+        scannedModules = {}
+        scanAndOverride(ReplicatedStorage)
+        scanAndOverride(Workspace)
+        print("✅ Full rescan complete")
+    end
+end)
+
+-- ========================================================
+-- BOOT PRINT
+-- ========================================================
+
+print("========================================================")
+print("  STRIKE WARFARE — GOD MODE ULTIMATE v2.0")
+print("========================================================")
+print("  ❤️  Player: math.huge HP | Anti-Death Loop Active")
+print("  ⚔️  Weapons: GOD_DAMAGE | Infinite Ammo | 0 Cooldown")
+print("  🚁  H = Spawn God Helicopter")
+print("  🚗  J = Spawn ALL Vehicles (Tank, Jet, APC, etc.)")
+print("  ⚡  G = Refill All Stats to GOD tier")
+print("  💥  K = Nuke vehicles + Respawn fresh")
+print("  🔄  L = Rescan all game modules")
+print("  🔁  Heartbeat Sync: Ammo | Fuel | HP | Cooldown = 0")
+print("  🔍  Auto-detect new modules on load")
+print("========================================================")
