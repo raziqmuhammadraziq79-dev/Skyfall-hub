@@ -1,0 +1,177 @@
+-- ========================================================
+-- STRIKE WARFARE — HELICOPTER INFINITE AMMO
+-- Workspace scan + Property lock + Auto spawn detect
+-- ========================================================
+
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local LP = Players.LocalPlayer
+
+-- Keyword list ammo helicopter
+local AMMO_KEYS = {
+    "ammo", "bullet", "rocket", "missile", "mag", "clip",
+    "cannon", "gun", "shell", "round", "charge", "warhead",
+    "projectile", "bomb", "torpedo", "flare", "chaff"
+}
+
+local RELOAD_KEYS = {
+    "reload", "cooldown", "delay", "recharge", "wait",
+    "interval", "timer", "rate"
+}
+
+local LOCKED = {}
+
+-- ========================================================
+-- CORE: Lock satu value
+-- ========================================================
+local function LockValue(v, targetVal)
+    if LOCKED[v] then return end
+    LOCKED[v] = true
+    v.Value = targetVal
+    v.Changed:Connect(function()
+        if v.Value ~= targetVal then
+            v.Value = targetVal
+        end
+    end)
+end
+
+-- ========================================================
+-- SCAN: Cek apakah nama cocok keyword
+-- ========================================================
+local function MatchKey(name, list)
+    local lower = name:lower()
+    for _, key in ipairs(list) do
+        if lower:find(key) then return true end
+    end
+    return false
+end
+
+-- ========================================================
+-- HIJACK: Satu instance vehicle/helicopter
+-- ========================================================
+local function HijackInstance(root)
+    for _, v in ipairs(root:GetDescendants()) do
+        -- IntValue / NumberValue → lock langsung
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            if MatchKey(v.Name, AMMO_KEYS) then
+                LockValue(v, 9999)
+            elseif MatchKey(v.Name, RELOAD_KEYS) then
+                LockValue(v, 0)
+            end
+
+        -- StringValue yang nyimpen angka (edge case)
+        elseif v:IsA("StringValue") then
+            if MatchKey(v.Name, AMMO_KEYS) then
+                pcall(function() v.Value = "9999" end)
+            end
+
+        -- ModuleScript → require dan patch table
+        elseif v:IsA("ModuleScript") then
+            local ok, data = pcall(require, v)
+            if ok and type(data) == "table" then
+                for k, _ in pairs(data) do
+                    if MatchKey(k, AMMO_KEYS) then
+                        data[k] = math.huge
+                    elseif MatchKey(k, RELOAD_KEYS) then
+                        data[k] = 0
+                    elseif k:lower():find("damage") then
+                        data[k] = 9999
+                    elseif k:lower():find("speed") or k:lower():find("velocity") then
+                        data[k] = 9999
+                    end
+                end
+            end
+
+        -- Folder/Model → rekursif manual buat nested deep
+        elseif v:IsA("Configuration") then
+            for _, cfg in ipairs(v:GetChildren()) do
+                if cfg:IsA("IntValue") or cfg:IsA("NumberValue") then
+                    if MatchKey(cfg.Name, AMMO_KEYS) then
+                        LockValue(cfg, 9999)
+                    elseif MatchKey(cfg.Name, RELOAD_KEYS) then
+                        LockValue(cfg, 0)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ========================================================
+-- FILTER: Apakah ini vehicle/helicopter?
+-- ========================================================
+local VEHICLE_KEYS = {
+    "heli", "mi", "helicopter", "aircraft", "plane", "jet",
+    "vehicle", "tank", "jeep", "truck", "boat", "ship",
+    "hind", "apache", "blackhawk", "chinook", "huey"
+}
+
+local function IsVehicle(obj)
+    return MatchKey(obj.Name, VEHICLE_KEYS)
+end
+
+-- ========================================================
+-- AUTO DETECT: Vehicle baru yang spawn
+-- ========================================================
+Workspace.ChildAdded:Connect(function(child)
+    task.wait(0.3) -- tunggu fully loaded
+    if IsVehicle(child) then
+        HijackInstance(child)
+        print("🚁 New vehicle detected & hijacked: " .. child.Name)
+    else
+        -- Scan juga non-vehicle, mungkin nama aneh
+        HijackInstance(child)
+    end
+end)
+
+-- Scan nested (vehicle dalam folder)
+Workspace.DescendantAdded:Connect(function(desc)
+    if desc:IsA("Model") and IsVehicle(desc) then
+        task.wait(0.3)
+        HijackInstance(desc)
+    end
+end)
+
+-- ========================================================
+-- INITIAL SCAN: Semua yang udah ada di Workspace
+-- ========================================================
+for _, child in ipairs(Workspace:GetChildren()) do
+    HijackInstance(child)
+end
+
+-- ========================================================
+-- HEARTBEAT: Safety net pin setiap frame
+-- ========================================================
+RunService.Heartbeat:Connect(function()
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        if (v:IsA("IntValue") or v:IsA("NumberValue")) and not LOCKED[v] then
+            if MatchKey(v.Name, AMMO_KEYS) then
+                if v.Value < 500 then
+                    LockValue(v, 9999)
+                end
+            elseif MatchKey(v.Name, RELOAD_KEYS) then
+                if v.Value > 0 then
+                    LockValue(v, 0)
+                end
+            end
+        end
+    end
+end)
+
+-- ========================================================
+-- PLAYER SEAT DETECTION: Kalau player masuk vehicle
+-- ========================================================
+LP.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    -- Re-scan semua waktu respawn
+    for _, child in ipairs(Workspace:GetChildren()) do
+        HijackInstance(child)
+    end
+end)
+
+print("✅ Helicopter Infinite Ammo — Active")
+print("🔒 Property lock: ON")
+print("👁️ Auto-detect spawn: ON")  
+print("💥 Heartbeat pin: ON")
+print("6767 gng frfr.")
